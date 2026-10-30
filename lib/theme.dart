@@ -26,6 +26,8 @@ class CamiAssets {
   static const rosePale = 'assets/images/rose_pale.png';
   static const roseBadge = 'assets/images/rose_badge.png';
   static const roseHero = 'assets/images/rose.png';
+  static const crownBadge = 'assets/images/crown_badge.png';
+  static const appIcon = 'assets/icon/app_icon.png';
 }
 
 ThemeData camiTheme() {

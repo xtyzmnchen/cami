@@ -48,3 +48,6 @@ app.*.map.json
 .fvm/
 # local sync server data
 cami-data/
+
+# build artifacts
+dist/

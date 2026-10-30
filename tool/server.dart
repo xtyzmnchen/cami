@@ -20,7 +20,7 @@ Future<void> main() async {
   if (!await sessionsFile.exists()) await sessionsFile.writeAsString('{}');
 
   final server = await HttpServer.bind(InternetAddress.anyIPv4, port);
-  stdout.writeln('萱萱小皇冠已在这台电脑打开');
+  stdout.writeln('小皇冠已在这台电脑打开');
   stdout.writeln('本机查看：http://127.0.0.1:$port/health');
   stdout.writeln('手机里填写同步地址后，用手机号登录/注册');
   stdout.writeln('口令：$token');

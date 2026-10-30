@@ -63,7 +63,7 @@ class _CamiAppState extends State<CamiApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final store = context.watch<Store>();
     return MaterialApp(
-      title: '萱萱小皇冠',
+      title: '小皇冠',
       debugShowCheckedModeBanner: false,
       theme: camiTheme(),
       locale: const Locale('zh', 'CN'),
