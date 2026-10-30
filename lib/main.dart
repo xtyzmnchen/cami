@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
+import 'pages/auth_page.dart';
 import 'pages/calendar_page.dart';
 import 'pages/focus_page.dart';
 import 'pages/home.dart';
+import 'pages/parent_page.dart';
 import 'pages/points_page.dart';
 import 'services/notify.dart';
 import 'store.dart';
@@ -52,12 +54,14 @@ class _CamiAppState extends State<CamiApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      context.read<Store>().syncPull();
+      final store = context.read<Store>();
+      if (store.isLoggedIn) store.syncPull();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final store = context.watch<Store>();
     return MaterialApp(
       title: '萱萱小皇冠',
       debugShowCheckedModeBanner: false,
@@ -69,7 +73,9 @@ class _CamiAppState extends State<CamiApp> with WidgetsBindingObserver {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const Shell(),
+      home: !store.isLoggedIn
+          ? const AuthPage()
+          : (store.parentMode ? const ParentShell() : const Shell()),
     );
   }
 }

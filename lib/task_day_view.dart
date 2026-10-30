@@ -111,6 +111,7 @@ class TaskExpandTile extends StatelessWidget {
                 taskId: task.id,
                 serverUrl: store.serverUrl,
                 token: store.serverToken,
+                session: store.sessionId,
               ),
           ],
         ),
@@ -126,6 +127,7 @@ class _MediaPreview extends StatelessWidget {
     required this.taskId,
     required this.serverUrl,
     required this.token,
+    required this.session,
   });
 
   final MediaItem item;
@@ -133,6 +135,7 @@ class _MediaPreview extends StatelessWidget {
   final String taskId;
   final String serverUrl;
   final String token;
+  final String session;
 
   String get _kindLabel =>
       item.kind == 'photo' ? '照片' : item.kind == 'video' ? '视频' : '录音';
@@ -193,6 +196,7 @@ class _MediaPreview extends StatelessWidget {
                   filename: item.storedName,
                   serverUrl: serverUrl,
                   token: token,
+                  session: session,
                 ),
               ),
             ),

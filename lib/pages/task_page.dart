@@ -477,6 +477,7 @@ Widget _mediaTile(BuildContext context, Store store, MediaItem item) {
                 filename: item.storedName,
                 serverUrl: store.serverUrl,
                 token: store.serverToken,
+                session: store.sessionId,
               ),
             ),
           ),

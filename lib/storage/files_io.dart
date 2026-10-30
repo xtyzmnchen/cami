@@ -9,8 +9,19 @@ import 'package:video_player/video_player.dart';
 
 import '../theme.dart';
 
-Future<String> saveMediaBytes(String filename, List<int> bytes) async {
+/// 当前登录手机号；本地状态/附件按账号分开存，互不混淆。
+String activeAccountPhone = '';
+
+Future<Directory> _accountDir() async {
   final root = await getApplicationDocumentsDirectory();
+  if (activeAccountPhone.isEmpty) return Directory(root.path);
+  final dir = Directory('${root.path}/accounts/$activeAccountPhone');
+  await dir.create(recursive: true);
+  return dir;
+}
+
+Future<String> saveMediaBytes(String filename, List<int> bytes) async {
+  final root = await _accountDir();
   final dir = Directory('${root.path}/media');
   await dir.create(recursive: true);
   final file = File('${dir.path}/$filename');
@@ -31,7 +42,7 @@ Future<void> deleteMediaFile(String path, String storedName) async {
       final file = File(path);
       if (await file.exists()) await file.delete();
     } else if (storedName.isNotEmpty) {
-      final root = await getApplicationDocumentsDirectory();
+      final root = await _accountDir();
       final file = File('${root.path}/media/$storedName');
       if (await file.exists()) await file.delete();
     }
@@ -41,7 +52,7 @@ Future<void> deleteMediaFile(String path, String storedName) async {
 /// 删掉本地 media 目录里、状态里已经不存在的文件。
 Future<void> pruneOrphanMedia(Set<String> keepNames) async {
   try {
-    final root = await getApplicationDocumentsDirectory();
+    final root = await _accountDir();
     final dir = Directory('${root.path}/media');
     if (!await dir.exists()) return;
     await for (final entity in dir.list()) {
@@ -56,14 +67,14 @@ Future<void> pruneOrphanMedia(Set<String> keepNames) async {
 }
 
 Future<String?> readState() async {
-  final root = await getApplicationDocumentsDirectory();
+  final root = await _accountDir();
   final file = File('${root.path}/cami-state.json');
   if (!await file.exists()) return null;
   return file.readAsString();
 }
 
 Future<void> writeState(String value) async {
-  final root = await getApplicationDocumentsDirectory();
+  final root = await _accountDir();
   final file = File('${root.path}/cami-state.json');
   await file.writeAsString(value);
 }
@@ -74,11 +85,15 @@ Widget mediaView({
   required String filename,
   String? serverUrl,
   String? token,
+  String? session,
 }) {
   final local = path.isNotEmpty && File(path).existsSync();
-  final remote = (serverUrl ?? '').isNotEmpty
-      ? '${serverUrl!.replaceAll(RegExp(r'/+$'), '')}/api/media/$filename?token=${Uri.encodeQueryComponent(token ?? '')}'
+  var remote = (serverUrl ?? '').isNotEmpty
+      ? '${serverUrl!.replaceAll(RegExp(r'/+$'), '')}/api/media/${Uri.encodeComponent(filename)}?token=${Uri.encodeQueryComponent(token ?? '')}'
       : null;
+  if (remote != null && (session ?? '').isNotEmpty) {
+    remote = '$remote&session=${Uri.encodeQueryComponent(session!)}';
+  }
   if (kind == 'photo') {
     if (local) return Image.file(File(path), fit: BoxFit.cover);
     if (remote != null) return Image.network(remote, fit: BoxFit.cover);

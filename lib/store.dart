@@ -27,21 +27,50 @@ class Store extends ChangeNotifier {
   late AppData data;
   String serverUrl = '';
   String serverToken = 'cami-home';
+  String sessionId = '';
+  String phone = '';
+  UserProfile? profile;
   String? syncError;
   DateTime? lastSync;
   bool syncing = false;
+  bool parentMode = false;
   bool _pushAgain = false;
   final uploaded = <String>{};
   Timer? _syncTimer;
   final _uuid = const Uuid();
 
   String get todayKey => dayKey(DateTime.now());
+  bool get isLoggedIn => sessionId.isNotEmpty && phone.isNotEmpty;
+
+  AppData _freshData({String childName = 'Cami'}) => AppData(
+        pinHash: pinHashOf('2580'),
+        childName: childName,
+        updatedAt: DateTime.now().toIso8601String(),
+        tasks: seedTasks(),
+        progress: [],
+        rewards: seedRewards(),
+        redemptions: [],
+        playsUsed: {},
+      );
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     serverUrl = prefs.getString('cami_server_url') ?? '';
     serverToken = prefs.getString('cami_server_token') ?? 'cami-home';
-    uploaded.addAll(prefs.getStringList('cami_uploaded') ?? const []);
+    sessionId = prefs.getString('cami_session') ?? '';
+    phone = prefs.getString('cami_phone') ?? '';
+    parentMode = prefs.getBool('cami_parent_mode') == true;
+    final profileRaw = prefs.getString('cami_profile');
+    if (profileRaw != null && profileRaw.isNotEmpty) {
+      try {
+        profile = UserProfile.fromJson(jsonDecode(profileRaw) as Map<String, dynamic>);
+      } catch (_) {}
+    }
+    activeAccountPhone = phone;
+    uploaded
+      ..clear()
+      ..addAll(prefs.getStringList(_uploadedKey) ?? const []);
+    data = _freshData(childName: profile?.name ?? 'Cami');
     try {
       final raw = await readState();
       if (raw != null && raw.isNotEmpty) {
@@ -50,6 +79,138 @@ class Store extends ChangeNotifier {
     } catch (_) {}
     await _repairEnglishCheckIn();
     notifyListeners();
+  }
+
+  String get _uploadedKey => phone.isEmpty ? 'cami_uploaded' : 'cami_uploaded_$phone';
+
+  String _normPhone(String raw) => raw.replaceAll(RegExp(r'\D'), '');
+
+  bool validPhone(String raw) => RegExp(r'^1\d{10}$').hasMatch(_normPhone(raw));
+
+  Future<bool> checkPhoneExists(String rawPhone) async {
+    if (serverUrl.isEmpty) throw Exception('先填写同步电脑地址');
+    final phoneNo = _normPhone(rawPhone);
+    if (!validPhone(phoneNo)) throw Exception('手机号不对');
+    final res = await http
+        .get(
+          Uri.parse(_authed('/api/account/check?phone=${Uri.encodeQueryComponent(phoneNo)}')),
+          headers: _gateHeaders,
+        )
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode == 401) throw Exception('同步口令不对');
+    if (res.statusCode >= 300) throw Exception('查不到服务器');
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return body['exists'] == true;
+  }
+
+  Future<String?> register({
+    required String rawPhone,
+    required String password,
+    required String name,
+    required int age,
+    required String grade,
+    required String interests,
+  }) async {
+    if (serverUrl.isEmpty) return '先填写同步电脑地址';
+    final phoneNo = _normPhone(rawPhone);
+    if (!validPhone(phoneNo)) return '手机号不对';
+    if (password.length < 4) return '密码至少 4 位';
+    if (name.trim().isEmpty) return '请填写名字';
+    final res = await http
+        .post(
+          Uri.parse(_authed('/api/register')),
+          headers: {..._gateHeaders, 'content-type': 'application/json'},
+          body: jsonEncode({
+            'phone': phoneNo,
+            'password': password,
+            'name': name.trim(),
+            'age': age,
+            'grade': grade.trim(),
+            'interests': interests.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    final body = _decodeMap(res.body);
+    if (res.statusCode >= 300) return '${body['error'] ?? '注册失败'}';
+    await _applyAuth(body);
+    return null;
+  }
+
+  Future<String?> login({required String rawPhone, required String password}) async {
+    if (serverUrl.isEmpty) return '先填写同步电脑地址';
+    final phoneNo = _normPhone(rawPhone);
+    if (!validPhone(phoneNo)) return '手机号不对';
+    final res = await http
+        .post(
+          Uri.parse(_authed('/api/login')),
+          headers: {..._gateHeaders, 'content-type': 'application/json'},
+          body: jsonEncode({'phone': phoneNo, 'password': password}),
+        )
+        .timeout(const Duration(seconds: 20));
+    final body = _decodeMap(res.body);
+    if (res.statusCode >= 300) return '${body['error'] ?? '登录失败'}';
+    await _applyAuth(body);
+    return null;
+  }
+
+  Map<String, dynamic> _decodeMap(String raw) {
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> _applyAuth(Map<String, dynamic> body) async {
+    sessionId = '${body['session'] ?? ''}';
+    final profileJson = Map<String, dynamic>.from(body['profile'] as Map? ?? {});
+    profile = UserProfile.fromJson(profileJson);
+    phone = profile!.phone;
+    activeAccountPhone = phone;
+    data = _freshData(childName: profile!.name);
+    uploaded.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cami_session', sessionId);
+    await prefs.setString('cami_phone', phone);
+    await prefs.setString('cami_profile', jsonEncode(profile!.toJson()));
+    uploaded.addAll(prefs.getStringList(_uploadedKey) ?? const []);
+    try {
+      final raw = await readState();
+      if (raw != null && raw.isNotEmpty) {
+        data = AppData.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      } else {
+        await writeState(jsonEncode(data.toJson()));
+      }
+    } catch (_) {
+      await writeState(jsonEncode(data.toJson()));
+    }
+    await _repairEnglishCheckIn();
+    notifyListeners();
+    unawaited(syncPull());
+  }
+
+  Future<void> logout() async {
+    sessionId = '';
+    phone = '';
+    profile = null;
+    parentMode = false;
+    activeAccountPhone = '';
+    uploaded.clear();
+    data = _freshData();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('cami_session');
+    await prefs.remove('cami_phone');
+    await prefs.remove('cami_profile');
+    await prefs.setBool('cami_parent_mode', false);
+    notifyListeners();
+  }
+
+  Future<void> setParentMode(bool value) async {
+    parentMode = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('cami_parent_mode', value);
+    notifyListeners();
+    if (value) unawaited(syncPull());
   }
 
   /// 防止「英语打卡」丢掉特殊标记后，四条录音对不上、看起来像任务消失。
@@ -108,12 +269,38 @@ class Store extends ChangeNotifier {
   }
 
   Future<void> setServer(String url, String token) async {
-    serverUrl = url.trim().replaceAll(RegExp(r'/+$'), '');
+    var cleaned = url.trim();
+    final uri = Uri.tryParse(cleaned);
+    if (uri != null && uri.hasScheme && uri.host.isNotEmpty) {
+      final embedded = uri.queryParameters['token']?.trim() ?? '';
+      if (embedded.isNotEmpty && token.trim().isEmpty) token = embedded;
+      final port = uri.hasPort ? ':${uri.port}' : '';
+      cleaned = '${uri.scheme}://${uri.host}$port${uri.path}';
+    }
+    serverUrl = cleaned.replaceAll(RegExp(r'/+$'), '');
     serverToken = token.trim().isEmpty ? 'cami-home' : token.trim();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('cami_server_url', serverUrl);
     await prefs.setString('cami_server_token', serverToken);
     notifyListeners();
+  }
+
+  Map<String, String> get _gateHeaders => {
+        'x-cami-token': serverToken,
+      };
+
+  Map<String, String> get _authHeaders => {
+        'x-cami-token': serverToken,
+        if (sessionId.isNotEmpty) 'x-cami-session': sessionId,
+      };
+
+  String _authed(String path) {
+    final join = path.contains('?') ? '&' : '?';
+    var url = '$serverUrl$path${join}token=${Uri.encodeQueryComponent(serverToken)}';
+    if (sessionId.isNotEmpty) {
+      url += '&session=${Uri.encodeQueryComponent(sessionId)}';
+    }
+    return url;
   }
 
   List<TaskTemplate> tasksFor(String subject, String date) =>
@@ -164,7 +351,8 @@ class Store extends ChangeNotifier {
       taskTitle: task?.title ?? label,
       englishType: englishType,
     );
-    final base = safeMediaFileName(display);
+    // 磁盘文件名只用 ASCII，中文放在 label 里显示。
+    final base = safeMediaFileName('${date}_${kind}_${_uuid.v4().substring(0, 8)}');
     final used = data.progress
         .expand((row) => row.media)
         .map((item) => item.storedName)
@@ -224,10 +412,12 @@ class Store extends ChangeNotifier {
   Future<void> _deleteRemoteMedia(String storedName) async {
     if (serverUrl.isEmpty || storedName.isEmpty) return;
     try {
-      final uri = Uri.parse(
-        '$serverUrl/api/media/${Uri.encodeComponent(storedName)}?token=${Uri.encodeQueryComponent(serverToken)}',
-      );
-      await http.delete(uri).timeout(const Duration(seconds: 15));
+      await http
+          .delete(
+            Uri.parse(_authed('/api/media/${Uri.encodeComponent(storedName)}')),
+            headers: _authHeaders,
+          )
+          .timeout(const Duration(seconds: 15));
     } catch (_) {}
   }
 
@@ -375,7 +565,7 @@ class Store extends ChangeNotifier {
   }
 
   Future<void> syncPush() async {
-    if (serverUrl.isEmpty) return;
+    if (serverUrl.isEmpty || !isLoggedIn) return;
     if (syncing) {
       _pushAgain = true;
       return;
@@ -384,15 +574,33 @@ class Store extends ChangeNotifier {
     syncError = null;
     notifyListeners();
     try {
+      final missing = <String>[];
       for (final row in data.progress) {
         for (final media in row.media) {
-          if (uploaded.contains(media.storedName)) continue;
+          final remoteUrl = _authed('/api/media/${Uri.encodeComponent(media.storedName)}');
+          if (uploaded.contains(media.storedName)) {
+            final check = await http
+                .get(Uri.parse(remoteUrl), headers: _authHeaders)
+                .timeout(const Duration(seconds: 15));
+            if (check.statusCode == 200) continue;
+            uploaded.remove(media.storedName);
+          }
           final bytes = await readMediaBytes(media.path);
-          if (bytes == null) continue;
-          final uri = Uri.parse(
-            '$serverUrl/api/media/${Uri.encodeComponent(media.storedName)}?token=${Uri.encodeQueryComponent(serverToken)}',
-          );
-          final res = await http.post(uri, body: bytes).timeout(const Duration(seconds: 30));
+          if (bytes == null || bytes.isEmpty) {
+            missing.add(media.label.isEmpty ? media.storedName : media.label);
+            continue;
+          }
+          final res = await http
+              .post(
+                Uri.parse(remoteUrl),
+                headers: {
+                  ..._authHeaders,
+                  'content-type': 'application/octet-stream',
+                },
+                body: bytes,
+              )
+              .timeout(const Duration(seconds: 120));
+          if (res.statusCode == 401) throw Exception('口令不对');
           if (res.statusCode >= 300) {
             throw Exception('上传失败 ${res.statusCode}');
           }
@@ -400,19 +608,30 @@ class Store extends ChangeNotifier {
         }
       }
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('cami_uploaded', uploaded.toList());
+      await prefs.setStringList(_uploadedKey, uploaded.toList());
       final res = await http
           .put(
-            Uri.parse('$serverUrl/api/state?token=${Uri.encodeQueryComponent(serverToken)}'),
-            headers: {'content-type': 'application/json'},
+            Uri.parse(_authed('/api/state')),
+            headers: {
+              ..._authHeaders,
+              'content-type': 'application/json',
+            },
             body: jsonEncode(data.toJson()),
           )
           .timeout(const Duration(seconds: 20));
+      if (res.statusCode == 401) throw Exception('请重新登录');
       if (res.statusCode >= 300) throw Exception('同步失败 ${res.statusCode}');
       lastSync = DateTime.now();
-      syncError = null;
+      syncError = missing.isEmpty
+          ? null
+          : '进度已同步，但有 ${missing.length} 个附件没传到电脑。请用拍过照/录过音的那台手机再点「现在上传」';
     } catch (e) {
-      syncError = '还没连上同步电脑，检查地址和 cpolar';
+      final text = '$e';
+      syncError = text.contains('登录') || text.contains('口令')
+          ? text.contains('登录')
+              ? '登录已失效，请重新登录'
+              : '口令不对，设置里填 cami-home 后再保存'
+          : '还没连上同步电脑，检查地址和 cpolar';
     } finally {
       syncing = false;
       notifyListeners();
@@ -425,7 +644,12 @@ class Store extends ChangeNotifier {
 
   Future<void> syncPull() async {
     if (serverUrl.isEmpty) {
-      syncError = '先在设置里填写同步电脑地址';
+      syncError = '先填写同步电脑地址并登录';
+      notifyListeners();
+      return;
+    }
+    if (!isLoggedIn) {
+      syncError = '请先用手机号登录';
       notifyListeners();
       return;
     }
@@ -435,15 +659,19 @@ class Store extends ChangeNotifier {
     notifyListeners();
     try {
       final res = await http
-          .get(Uri.parse('$serverUrl/api/state?token=${Uri.encodeQueryComponent(serverToken)}'))
+          .get(
+            Uri.parse(_authed('/api/state')),
+            headers: _authHeaders,
+          )
           .timeout(const Duration(seconds: 20));
+      if (res.statusCode == 401) throw Exception('请重新登录');
       if (res.statusCode == 404) {
         lastSync = DateTime.now();
         syncing = false;
         notifyListeners();
         return;
       }
-      if (res.statusCode >= 300) throw Exception('读取失败');
+      if (res.statusCode >= 300) throw Exception('读取失败 ${res.statusCode}');
       final remote = AppData.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
       if (remote.updatedAt.compareTo(data.updatedAt) >= 0) {
         data = remote;
@@ -451,13 +679,18 @@ class Store extends ChangeNotifier {
         final keep = data.progress.expand((row) => row.media).map((m) => m.storedName).toSet();
         uploaded.removeWhere((name) => !keep.contains(name));
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setStringList('cami_uploaded', uploaded.toList());
+        await prefs.setStringList(_uploadedKey, uploaded.toList());
         await pruneOrphanMedia(keep);
       }
       lastSync = DateTime.now();
       syncError = null;
-    } catch (_) {
-      syncError = '还没连上同步电脑，检查地址和 cpolar';
+    } catch (e) {
+      final text = '$e';
+      syncError = text.contains('登录')
+          ? '登录已失效，请重新登录'
+          : text.contains('口令')
+              ? '口令不对，设置里填 cami-home 后再保存'
+              : '还没连上同步电脑，检查地址和 cpolar';
     } finally {
       syncing = false;
       notifyListeners();

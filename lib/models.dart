@@ -137,6 +137,38 @@ class TaskProgress {
       );
 }
 
+class UserProfile {
+  UserProfile({
+    required this.phone,
+    required this.name,
+    required this.age,
+    required this.grade,
+    required this.interests,
+  });
+
+  String phone;
+  String name;
+  int age;
+  String grade;
+  String interests;
+
+  Map<String, dynamic> toJson() => {
+        'phone': phone,
+        'name': name,
+        'age': age,
+        'grade': grade,
+        'interests': interests,
+      };
+
+  factory UserProfile.fromJson(Map<String, dynamic> j) => UserProfile(
+        phone: '${j['phone'] ?? ''}',
+        name: '${j['name'] ?? ''}',
+        age: (j['age'] as num?)?.toInt() ?? 0,
+        grade: '${j['grade'] ?? ''}',
+        interests: '${j['interests'] ?? ''}',
+      );
+}
+
 class Reward {
   Reward({required this.id, required this.title, required this.cost});
 

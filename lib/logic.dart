@@ -134,11 +134,15 @@ String englishFileLabel(DateTime day, String type) =>
     'Cami_${DateFormat('yyyyMMdd').format(day)}_$type';
 
 String safeMediaFileName(String raw) {
+  // 只保留 ASCII，避免上传 URL / 服务端解码中文文件名时报错。
   var name = raw.trim();
   name = name.replaceAll(RegExp(r'[\\/:*?"<>|\n\r]+'), '_');
   name = name.replaceAll(RegExp(r'\s+'), '');
   name = name.replaceAll('·', '');
-  if (name.isEmpty) name = '作业';
+  name = name.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+  name = name.replaceAll(RegExp(r'_+'), '_');
+  name = name.replaceAll(RegExp(r'^_+|_+$'), '');
+  if (name.isEmpty) name = 'media';
   if (name.length > 48) name = name.substring(0, 48);
   return name;
 }

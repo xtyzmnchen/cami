@@ -9,7 +9,6 @@ import '../theme.dart';
 import '../widgets.dart';
 import 'english_page.dart';
 import 'focus_page.dart';
-import 'parent_page.dart';
 import 'play.dart';
 import 'task_page.dart';
 
@@ -53,20 +52,15 @@ class HomePage extends StatelessWidget {
               icon: const Icon(Icons.timer_outlined, color: CamiColors.roseDeep),
               tooltip: '番茄钟',
             ),
-            Material(
-              color: Colors.white.withValues(alpha: 0.75),
-              shape: const CircleBorder(),
-              child: IconButton(
-                onPressed: () async {
-                  if (await askPin(context) && context.mounted) {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const ParentPage()));
-                  } else if (context.mounted) {
-                    toast(context, '密码不对');
-                  }
-                },
-                icon: const Icon(Icons.lock_outline, color: CamiColors.roseDeep),
-                tooltip: '家长',
-              ),
+            FilledButton.tonal(
+              onPressed: () async {
+                if (await askPin(context) && context.mounted) {
+                  await context.read<Store>().setParentMode(true);
+                } else if (context.mounted) {
+                  toast(context, '密码不对');
+                }
+              },
+              child: const Text('家长端'),
             ),
           ],
         ),

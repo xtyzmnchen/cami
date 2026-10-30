@@ -10,52 +10,74 @@ import '../store.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
+/// 家长端主壳：底部直接放批改 / 任务 / 兑换 / 设置。
+class ParentShell extends StatefulWidget {
+  const ParentShell({super.key});
 
-class ParentPage extends StatelessWidget {
-  const ParentPage({super.key});
+  @override
+  State<ParentShell> createState() => _ParentShellState();
+}
+
+class _ParentShellState extends State<ParentShell> {
+  var index = 0;
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 4,
-      child: RoseBackdrop(
-        intensity: 0.28,
-        child: Scaffold(
+    final store = context.watch<Store>();
+    final name = store.profile?.name ?? store.data.childName;
+    final pages = [
+      const ParentReviewPage(),
+      const ParentTasksPage(),
+      const ParentRewardsPage(),
+      const ParentSettingsPage(),
+    ];
+    return RoseBackdrop(
+      intensity: 0.28,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
           backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            title: const Text('家长'),
-            bottom: const TabBar(
-              tabs: [
-                Tab(text: '批改'),
-                Tab(text: '任务'),
-                Tab(text: '兑换'),
-                Tab(text: '设置'),
-              ],
+          title: Text('家长端 · $name'),
+          actions: [
+            TextButton.icon(
+              onPressed: () => store.setParentMode(false),
+              icon: const Icon(Icons.child_care_outlined),
+              label: const Text('学生端'),
             ),
-          ),
-          body: const TabBarView(
-            children: [
-              _ReviewTab(),
-              _TasksTab(),
-              _RewardsTab(),
-              _SettingsTab(),
-            ],
-          ),
+          ],
+        ),
+        body: SafeArea(child: pages[index]),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: index,
+          onDestinationSelected: (value) => setState(() => index = value),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: '批改'),
+            NavigationDestination(icon: Icon(Icons.checklist_outlined), selectedIcon: Icon(Icons.checklist), label: '任务'),
+            NavigationDestination(icon: Icon(Icons.card_giftcard_outlined), selectedIcon: Icon(Icons.card_giftcard), label: '兑换'),
+            NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: '设置'),
+          ],
         ),
       ),
     );
   }
 }
 
-class _ReviewTab extends StatefulWidget {
-  const _ReviewTab();
+@Deprecated('Use ParentShell')
+class ParentPage extends StatelessWidget {
+  const ParentPage({super.key});
 
   @override
-  State<_ReviewTab> createState() => _ReviewTabState();
+  Widget build(BuildContext context) => const ParentShell();
 }
 
-class _ReviewTabState extends State<_ReviewTab> {
+class ParentReviewPage extends StatefulWidget {
+  const ParentReviewPage({super.key});
+
+  @override
+  State<ParentReviewPage> createState() => _ParentReviewPageState();
+}
+
+class _ParentReviewPageState extends State<ParentReviewPage> {
   Timer? _poll;
 
   @override
@@ -77,80 +99,146 @@ class _ReviewTabState extends State<_ReviewTab> {
     super.dispose();
   }
 
+  String _line(Store store, String date, TaskTemplate task) {
+    final row = store.progress(date, task.id);
+    if (row == null) return '还没开始 · 预设 ${task.points} 分';
+    if (!row.done) {
+      if (row.media.isEmpty) return '还没交内容 · 预设 ${task.points} 分';
+      return '待批改 · ${row.media.length} 个附件';
+    }
+    return '已完成 ${row.points} 分${row.comment.isEmpty ? '' : ' · ${row.comment}'}';
+  }
+
+  Color? _tileColor(Store store, String date, TaskTemplate task) {
+    final row = store.progress(date, task.id);
+    if (row == null) return null;
+    if (!row.done && row.media.isNotEmpty) return const Color(0xFFFFF3D6);
+    if (row.done) return CamiColors.greenBg;
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = context.watch<Store>();
     final key = store.todayKey;
-    final tasks = tasksOn(store.data, key);
-    final waiting = tasks.where((t) {
+    final all = tasksOn(store.data, key);
+    final waiting = all.where((t) {
       final row = store.progress(key, t.id);
       return row != null && row.media.isNotEmpty && !row.done;
     }).length;
     final sync = store.lastSync == null
         ? '还没同步'
         : '上次同步 ${store.lastSync!.hour}:${store.lastSync!.minute.toString().padLeft(2, '0')}';
+
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('今天 ${store.pointsOn(key)} 分 · 待看 $waiting 件', style: const TextStyle(fontWeight: FontWeight.w700)),
-                  Text(
-                    store.syncError ?? sync,
-                    style: TextStyle(color: store.syncError != null ? CamiColors.red : CamiColors.muted),
-                  ),
-                ],
+        GlassPanel(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '今天 ${store.pointsOn(key)} 分 · 待批改 $waiting 件',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    ),
+                    Text(
+                      store.syncError ?? sync,
+                      style: TextStyle(color: store.syncError != null ? CamiColors.red : CamiColors.muted, fontSize: 12),
+                    ),
+                    Text(
+                      '本月 ${monthPoints(store.data, DateTime.now().year, DateTime.now().month)} 分',
+                      style: const TextStyle(color: CamiColors.muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: store.syncing ? null : () => store.syncPull(),
+                icon: store.syncing
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh),
+                label: Text(store.syncing ? '同步中' : '刷新'),
+              ),
+            ],
+          ),
+        ),
+        if (waiting > 0) ...[
+          const SizedBox(height: 12),
+          const Text('优先待批改', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+          const SizedBox(height: 6),
+          for (final task in all.where((t) {
+            final row = store.progress(key, t.id);
+            return row != null && row.media.isNotEmpty && !row.done;
+          }))
+            Card(
+              color: const Color(0xFFFFF3D6),
+              child: ListTile(
+                leading: RoseAvatar(size: 36, label: task.subject.substring(0, 1), pale: true),
+                title: Text(task.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text('${task.subject} · ${_line(store, key, task)}'),
+                trailing: const Icon(Icons.rate_review_outlined, color: CamiColors.roseDeep),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => GradeTaskPage(task: task, date: key)),
+                ),
               ),
             ),
-            TextButton.icon(
-              onPressed: store.syncing ? null : () => store.syncPull(),
-              icon: store.syncing
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.refresh),
-              label: Text(store.syncing ? '同步中' : '刷新'),
-            ),
-          ],
-        ),
-        Text('本月 ${monthPoints(store.data, DateTime.now().year, DateTime.now().month)} 分', style: const TextStyle(color: CamiColors.muted)),
-        const SizedBox(height: 8),
-        for (final task in tasks)
-          Card(
-            child: ListTile(
-              title: Text(task.title),
-              subtitle: Text(_line(store, key, task)),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _GradePage(task: task, date: key))),
+        ],
+        for (final subject in subjects) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 16, 2, 8),
+            child: Row(
+              children: [
+                RoseAvatar(size: 34, label: subject.substring(0, 1), pale: true),
+                const SizedBox(width: 10),
+                Expanded(child: Text(subject, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800))),
+                Builder(
+                  builder: (context) {
+                    final list = store.tasksFor(subject, key);
+                    final done = list.where((t) => store.done(key, t.id)).length;
+                    return Text('$done/${list.length}', style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700));
+                  },
+                ),
+              ],
             ),
           ),
+          for (final task in store.tasksFor(subject, key))
+            Card(
+              color: _tileColor(store, key, task),
+              child: ListTile(
+                title: Text(task.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(_line(store, key, task)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => GradeTaskPage(task: task, date: key)),
+                ),
+              ),
+            ),
+          if (store.tasksFor(subject, key).isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(left: 8, bottom: 8),
+              child: Text('这科今天没有任务', style: TextStyle(color: CamiColors.muted)),
+            ),
+        ],
       ],
     );
   }
-
-  String _line(Store store, String date, TaskTemplate task) {
-    final row = store.progress(date, task.id);
-    if (row == null) return '还没开始 · 预设 ${task.points} 分';
-    if (!row.done) {
-      if (row.media.isEmpty) return '还没交内容 · 预设 ${task.points} 分';
-      return '有内容，还没算完成 · ${row.media.length} 个文件';
-    }
-    return '已完成 ${row.points} 分${row.comment.isEmpty ? '' : ' · ${row.comment}'}';
-  }
 }
 
-class _GradePage extends StatefulWidget {
-  const _GradePage({required this.task, required this.date});
+class GradeTaskPage extends StatefulWidget {
+  const GradeTaskPage({super.key, required this.task, required this.date});
   final TaskTemplate task;
   final String date;
 
   @override
-  State<_GradePage> createState() => _GradePageState();
+  State<GradeTaskPage> createState() => _GradeTaskPageState();
 }
 
-class _GradePageState extends State<_GradePage> {
+class _GradeTaskPageState extends State<GradeTaskPage> {
   late int points;
   late final TextEditingController comment;
 
@@ -174,7 +262,7 @@ class _GradePageState extends State<_GradePage> {
     final store = context.watch<Store>();
     final row = store.progress(widget.date, widget.task.id);
     return Scaffold(
-      appBar: AppBar(title: Text(widget.task.title)),
+      appBar: AppBar(title: Text('${widget.task.subject} · ${widget.task.title}')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -195,12 +283,14 @@ class _GradePageState extends State<_GradePage> {
                     filename: media.storedName,
                     serverUrl: store.serverUrl,
                     token: store.serverToken,
+                    session: store.sessionId,
                   ),
                 ),
               ),
               const SizedBox(height: 12),
             ],
-          const Text('给这件打几分'),
+          const Text('给这件打几分', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             children: [
@@ -214,7 +304,10 @@ class _GradePageState extends State<_GradePage> {
             label: '记下分数',
             onPressed: () async {
               await store.setScore(widget.date, widget.task.id, points, comment.text.trim());
-              if (context.mounted) Navigator.pop(context);
+              if (context.mounted) {
+                toast(context, '已记下');
+                Navigator.pop(context);
+              }
             },
           ),
           if (widget.task.schoolOnly)
@@ -238,52 +331,74 @@ class _GradePageState extends State<_GradePage> {
   }
 }
 
-class _TasksTab extends StatelessWidget {
-  const _TasksTab();
+class ParentTasksPage extends StatelessWidget {
+  const ParentTasksPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     final store = context.watch<Store>();
     final fixed = store.data.tasks.where((t) => !t.bonus).toList();
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
-        const Text('保存之后，就是每天要做的全部', style: TextStyle(color: CamiColors.muted)),
-        for (final task in fixed)
-          ListTile(
-            title: Text(task.title),
-            subtitle: Text('${task.subject} · ${taskMeta(task)}'),
-            trailing: const Icon(Icons.edit),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _EditTaskPage(task: task))),
+        const Text('按学科管理每天要做的任务', style: TextStyle(color: CamiColors.muted)),
+        for (final subject in subjects) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 16, 2, 8),
+            child: Row(
+              children: [
+                RoseAvatar(size: 34, label: subject.substring(0, 1), pale: true),
+                const SizedBox(width: 10),
+                Expanded(child: Text(subject, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800))),
+                Text(
+                  '${fixed.where((t) => t.subject == subject).length} 项',
+                  style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
           ),
-        RoseButton(
-          label: '添加一项',
-          onPressed: () {
-            final task = TaskTemplate(
-              id: store.newId(),
-              subject: '语文',
-              title: '新的一项',
-              minutes: 10,
-              points: 3,
-            );
-            Navigator.push(context, MaterialPageRoute(builder: (_) => _EditTaskPage(task: task, fresh: true)));
-          },
-        ),
+          for (final task in fixed.where((t) => t.subject == subject))
+            Card(
+              child: ListTile(
+                title: Text(task.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(taskMeta(task)),
+                trailing: const Icon(Icons.edit_outlined),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EditTaskPage(task: task))),
+              ),
+            ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () {
+                final task = TaskTemplate(
+                  id: store.newId(),
+                  subject: subject,
+                  title: '新的一项',
+                  minutes: 10,
+                  points: 3,
+                );
+                Navigator.push(context, MaterialPageRoute(builder: (_) => EditTaskPage(task: task, fresh: true)));
+              },
+              icon: const Icon(Icons.add),
+              label: Text('给$subject加一项'),
+            ),
+          ),
+        ],
       ],
     );
   }
 }
 
-class _EditTaskPage extends StatefulWidget {
-  const _EditTaskPage({required this.task, this.fresh = false});
+class EditTaskPage extends StatefulWidget {
+  const EditTaskPage({super.key, required this.task, this.fresh = false});
   final TaskTemplate task;
   final bool fresh;
 
   @override
-  State<_EditTaskPage> createState() => _EditTaskPageState();
+  State<EditTaskPage> createState() => _EditTaskPageState();
 }
 
-class _EditTaskPageState extends State<_EditTaskPage> {
+class _EditTaskPageState extends State<EditTaskPage> {
   late final title = TextEditingController(text: widget.task.title);
   late String subject = widget.task.subject;
   late int minutes = widget.task.minutes == 0 ? 10 : widget.task.minutes;
@@ -300,7 +415,7 @@ class _EditTaskPageState extends State<_EditTaskPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('编辑任务')),
+      appBar: AppBar(title: Text(widget.fresh ? '添加任务' : '编辑任务')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -374,8 +489,8 @@ class _EditTaskPageState extends State<_EditTaskPage> {
   }
 }
 
-class _RewardsTab extends StatelessWidget {
-  const _RewardsTab();
+class ParentRewardsPage extends StatelessWidget {
+  const ParentRewardsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -383,19 +498,22 @@ class _RewardsTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('可用 ${store.balance} 分 · 已兑换 ${store.spent} 分', style: const TextStyle(fontWeight: FontWeight.w700)),
+        Text('可用 ${store.balance} 分 · 已兑换 ${store.spent} 分', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+        const SizedBox(height: 8),
         for (final reward in store.data.rewards)
-          ListTile(
-            title: Text(reward.title),
-            subtitle: Text('${reward.cost} 分'),
-            trailing: FilledButton(
-              onPressed: () {
-                final error = store.redeem(reward.id);
-                toast(context, error ?? '已兑换 ${reward.title}');
-              },
-              child: const Text('兑换'),
+          Card(
+            child: ListTile(
+              title: Text(reward.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text('${reward.cost} 分'),
+              trailing: FilledButton(
+                onPressed: () {
+                  final error = store.redeem(reward.id);
+                  toast(context, error ?? '已兑换 ${reward.title}');
+                },
+                child: const Text('兑换'),
+              ),
+              onLongPress: () => store.deleteReward(reward.id),
             ),
-            onLongPress: () => store.deleteReward(reward.id),
           ),
         RoseButton(
           label: '添加一个奖励',
@@ -475,14 +593,14 @@ class _NewRewardPageState extends State<_NewRewardPage> {
   }
 }
 
-class _SettingsTab extends StatefulWidget {
-  const _SettingsTab();
+class ParentSettingsPage extends StatefulWidget {
+  const ParentSettingsPage({super.key});
 
   @override
-  State<_SettingsTab> createState() => _SettingsTabState();
+  State<ParentSettingsPage> createState() => _ParentSettingsPageState();
 }
 
-class _SettingsTabState extends State<_SettingsTab> {
+class _ParentSettingsPageState extends State<ParentSettingsPage> {
   late final name = TextEditingController();
   late final url = TextEditingController();
   late final token = TextEditingController();
@@ -513,16 +631,36 @@ class _SettingsTabState extends State<_SettingsTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        RoseButton(
+          label: '切回学生端',
+          onPressed: () => store.setParentMode(false),
+        ),
+        const Divider(height: 32),
+        if (store.profile != null) ...[
+          Text('当前账号 ${store.profile!.phone}', style: const TextStyle(fontWeight: FontWeight.w800)),
+          Text(
+            '${store.profile!.name} · ${store.profile!.age}岁 · ${store.profile!.grade}'
+            '${store.profile!.interests.isEmpty ? '' : ' · ${store.profile!.interests}'}',
+            style: const TextStyle(color: CamiColors.muted),
+          ),
+          const SizedBox(height: 8),
+          RoseButton(
+            label: '退出登录',
+            filled: false,
+            onPressed: () async {
+              await store.logout();
+              if (context.mounted) toast(context, '已退出');
+            },
+          ),
+          const Divider(height: 32),
+        ],
         TextField(controller: name, decoration: const InputDecoration(labelText: '孩子的名字')),
         const SizedBox(height: 8),
         RoseButton(label: '保存名字', onPressed: () => store.setChildName(name.text)),
         const Divider(height: 32),
-        const Text('同步电脑（家里或公司都行）', style: TextStyle(fontWeight: FontWeight.w700)),
+        const Text('同步电脑', style: TextStyle(fontWeight: FontWeight.w700)),
         const Text(
-          '1. 在这台电脑项目目录运行：dart run tool/server.dart\n'
-          '2. 用 cpolar 把本机 8787 端口映射成公网地址\n'
-          '3. 小孩手机和家长手机都填同一个地址与口令\n'
-          '4. 小孩点「完成」后会自动上传；家长打开批改页会自动刷新',
+          '每个手机号的数据单独存放。批改前可点刷新拉取最新作业。',
           style: TextStyle(color: CamiColors.muted, height: 1.45),
         ),
         const SizedBox(height: 8),
@@ -545,7 +683,14 @@ class _SettingsTabState extends State<_SettingsTab> {
         const SizedBox(height: 8),
         RoseButton(
           label: store.syncing ? '正在同步' : '现在上传到同步电脑',
-          onPressed: store.syncing ? null : () => store.syncPush(),
+          onPressed: store.syncing
+              ? null
+              : () async {
+                  await store.syncPush();
+                  if (!context.mounted) return;
+                  final err = context.read<Store>().syncError;
+                  toast(context, err ?? '已上传到同步电脑');
+                },
         ),
         const SizedBox(height: 8),
         RoseButton(
@@ -555,9 +700,15 @@ class _SettingsTabState extends State<_SettingsTab> {
         ),
         Text(store.syncError ?? sync, style: TextStyle(color: store.syncError != null ? CamiColors.red : CamiColors.muted)),
         const Divider(height: 32),
-        TextField(controller: pin, keyboardType: TextInputType.number, maxLength: 4, obscureText: true, decoration: const InputDecoration(labelText: '新的四位密码')),
+        TextField(
+          controller: pin,
+          keyboardType: TextInputType.number,
+          maxLength: 4,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: '新的四位家长密码'),
+        ),
         RoseButton(
-          label: '修改密码',
+          label: '修改家长密码',
           onPressed: () async {
             if (pin.text.length != 4) {
               toast(context, '请输入四位数字');
