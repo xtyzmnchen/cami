@@ -6,7 +6,7 @@
 
 发布后访问：
 
-**https://\<你的GitHub用户名\>.github.io/cami/**
+**https://xtyzmnchen.github.io/cami/**
 
 手机浏览器打开即可。家长设置里仍需填写同步电脑地址（`dart run tool/server.dart` + cpolar），才能和家里数据互通。
 
