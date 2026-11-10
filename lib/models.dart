@@ -213,6 +213,144 @@ class Redemption {
       );
 }
 
+class VocabDayRecord {
+  VocabDayRecord({
+    required this.date,
+    required this.mode,
+    List<int>? wordIndexes,
+    List<int>? mastered,
+  })  : wordIndexes = wordIndexes ?? [],
+        mastered = mastered ?? [];
+
+  /// yyyy-MM-dd
+  String date;
+
+  /// daily | weekly | monthly
+  String mode;
+  List<int> wordIndexes;
+  List<int> mastered;
+
+  bool get done =>
+      wordIndexes.isNotEmpty && mastered.length >= wordIndexes.length;
+
+  int get remaining =>
+      (wordIndexes.length - mastered.length).clamp(0, wordIndexes.length);
+
+  Map<String, dynamic> toJson() => {
+        'date': date,
+        'mode': mode,
+        'wordIndexes': wordIndexes,
+        'mastered': mastered,
+      };
+
+  factory VocabDayRecord.fromJson(Map<String, dynamic> j) => VocabDayRecord(
+        date: (j['date'] as String?) ?? '',
+        mode: (j['mode'] as String?) ?? 'daily',
+        wordIndexes: ((j['wordIndexes'] as List?) ?? [])
+            .map((e) => (e as num).toInt())
+            .toList(),
+        mastered: ((j['mastered'] as List?) ?? [])
+            .map((e) => (e as num).toInt())
+            .toList(),
+      );
+}
+
+class VocabState {
+  VocabState({
+    this.nextIndex = 0,
+    List<VocabDayRecord>? days,
+  }) : days = days ?? [];
+
+  /// 下一个新学单词在词库中的索引（随同步保存，删 App 不丢）
+  int nextIndex;
+  List<VocabDayRecord> days;
+
+  VocabDayRecord? dayOf(String date) {
+    for (final d in days) {
+      if (d.date == date) return d;
+    }
+    return null;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'nextIndex': nextIndex,
+        'days': days.map((e) => e.toJson()).toList(),
+      };
+
+  factory VocabState.fromJson(Map<String, dynamic>? j) {
+    if (j == null) return VocabState();
+    return VocabState(
+      nextIndex: (j['nextIndex'] as num?)?.toInt() ?? 0,
+      days: ((j['days'] as List?) ?? [])
+          .map((e) => VocabDayRecord.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+    );
+  }
+}
+
+class PoemDayRecord {
+  PoemDayRecord({
+    required this.date,
+    required this.poemIndex,
+    this.mastered = false,
+  });
+
+  String date;
+  int poemIndex;
+  bool mastered;
+
+  Map<String, dynamic> toJson() => {
+        'date': date,
+        'poemIndex': poemIndex,
+        'mastered': mastered,
+      };
+
+  factory PoemDayRecord.fromJson(Map<String, dynamic> j) => PoemDayRecord(
+        date: (j['date'] as String?) ?? '',
+        poemIndex: (j['poemIndex'] as num?)?.toInt() ?? 0,
+        mastered: j['mastered'] == true,
+      );
+}
+
+class PoemState {
+  PoemState({
+    this.nextIndex = 0,
+    this.continueIndex,
+    List<PoemDayRecord>? days,
+  }) : days = days ?? [];
+
+  /// 下一首新诗索引
+  int nextIndex;
+
+  /// 昨天没背熟，今天继续这一首
+  int? continueIndex;
+  List<PoemDayRecord> days;
+
+  PoemDayRecord? dayOf(String date) {
+    for (final d in days) {
+      if (d.date == date) return d;
+    }
+    return null;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'nextIndex': nextIndex,
+        'continueIndex': continueIndex,
+        'days': days.map((e) => e.toJson()).toList(),
+      };
+
+  factory PoemState.fromJson(Map<String, dynamic>? j) {
+    if (j == null) return PoemState();
+    return PoemState(
+      nextIndex: (j['nextIndex'] as num?)?.toInt() ?? 0,
+      continueIndex: (j['continueIndex'] as num?)?.toInt(),
+      days: ((j['days'] as List?) ?? [])
+          .map((e) => PoemDayRecord.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+    );
+  }
+}
+
 class AppData {
   AppData({
     required this.pinHash,
@@ -223,7 +361,12 @@ class AppData {
     required this.rewards,
     required this.redemptions,
     required this.playsUsed,
-  });
+    Map<String, int>? playSecondsLeft,
+    VocabState? vocab,
+    PoemState? poems,
+  })  : playSecondsLeft = playSecondsLeft ?? {},
+        vocab = vocab ?? VocabState(),
+        poems = poems ?? PoemState();
 
   String pinHash;
   String childName;
@@ -232,7 +375,12 @@ class AppData {
   List<TaskProgress> progress;
   List<Reward> rewards;
   List<Redemption> redemptions;
+  /// 旧字段：曾表示「玩过几轮」。新逻辑用 [playSecondsLeft]，保留仅为兼容同步。
   Map<String, int> playsUsed;
+  /// 当天游戏剩余秒数；有键且为 0 表示 10 分钟已用完。
+  Map<String, int> playSecondsLeft;
+  VocabState vocab;
+  PoemState poems;
 
   Map<String, dynamic> toJson() => {
         'pinHash': pinHash,
@@ -243,6 +391,9 @@ class AppData {
         'rewards': rewards.map((e) => e.toJson()).toList(),
         'redemptions': redemptions.map((e) => e.toJson()).toList(),
         'playsUsed': playsUsed,
+        'playSecondsLeft': playSecondsLeft,
+        'vocab': vocab.toJson(),
+        'poems': poems.toJson(),
       };
 
   factory AppData.fromJson(Map<String, dynamic> j) => AppData(
@@ -263,6 +414,15 @@ class AppData {
             .toList(),
         playsUsed: ((j['playsUsed'] as Map?) ?? {}).map(
           (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+        ),
+        playSecondsLeft: ((j['playSecondsLeft'] as Map?) ?? {}).map(
+          (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+        ),
+        vocab: VocabState.fromJson(
+          j['vocab'] is Map ? Map<String, dynamic>.from(j['vocab'] as Map) : null,
+        ),
+        poems: PoemState.fromJson(
+          j['poems'] is Map ? Map<String, dynamic>.from(j['poems'] as Map) : null,
         ),
       );
 }

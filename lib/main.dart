@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
+import 'l10n/l10n.dart';
 import 'pages/auth_page.dart';
 import 'pages/calendar_page.dart';
 import 'pages/focus_page.dart';
@@ -62,13 +63,15 @@ class _CamiAppState extends State<CamiApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<Store>();
+    final locale = store.localeCode == 'en' ? const Locale('en') : const Locale('zh', 'CN');
     return MaterialApp(
-      title: '小皇冠',
+      title: store.l10n.appTitle,
       debugShowCheckedModeBanner: false,
       theme: camiTheme(),
-      locale: const Locale('zh', 'CN'),
+      locale: locale,
       supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
       localizationsDelegates: const [
+        AppL10nDelegate(),
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
@@ -92,6 +95,7 @@ class _ShellState extends State<Shell> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final pages = [
       const HomePage(),
       const CalendarPage(),
@@ -105,12 +109,13 @@ class _ShellState extends State<Shell> {
             ? null
             : AppBar(
                 backgroundColor: Colors.transparent,
-                title: Text(['', '月历', '积分册', '总结'][index]),
+                title: Text(['', s.calendar, s.pointsBook, s.summary][index]),
                 actions: [
                   if (index == 3)
                     IconButton(
                       onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FocusPage())),
                       icon: const Icon(Icons.timer_outlined, color: CamiColors.roseDeep),
+                      tooltip: s.pomodoro,
                     ),
                 ],
               ),
@@ -123,18 +128,53 @@ class _ShellState extends State<Shell> {
           onDestinationSelected: (value) => setState(() => index = value),
           destinations: [
             NavigationDestination(
-              icon: Opacity(opacity: 0.55, child: Image.asset(CamiAssets.roseFlower, width: 22, height: 22)),
-              selectedIcon: Image.asset(CamiAssets.roseFlower, width: 24, height: 24),
-              label: '今日',
+              icon: _TabIcon(CamiAssets.tabToday, selected: false),
+              selectedIcon: _TabIcon(CamiAssets.tabToday, selected: true),
+              label: s.tabToday,
             ),
-            const NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: '日历'),
             NavigationDestination(
-              icon: Opacity(opacity: 0.55, child: Image.asset(CamiAssets.roseBadge, width: 22, height: 22)),
-              selectedIcon: Image.asset(CamiAssets.roseBadge, width: 24, height: 24),
-              label: '积分',
+              icon: _TabIcon(CamiAssets.tabCalendar, selected: false),
+              selectedIcon: _TabIcon(CamiAssets.tabCalendar, selected: true),
+              label: s.tabCalendar,
             ),
-            const NavigationDestination(icon: Icon(Icons.menu_book_outlined), label: '总结'),
+            NavigationDestination(
+              icon: _TabIcon(CamiAssets.tabPoints, selected: false),
+              selectedIcon: _TabIcon(CamiAssets.tabPoints, selected: true),
+              label: s.tabPoints,
+            ),
+            NavigationDestination(
+              icon: _TabIcon(CamiAssets.tabSummary, selected: false),
+              selectedIcon: _TabIcon(CamiAssets.tabSummary, selected: true),
+              label: s.tabSummary,
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TabIcon extends StatelessWidget {
+  const _TabIcon(this.asset, {required this.selected});
+  final String asset;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 180),
+      opacity: selected ? 1 : 0.55,
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 180),
+        scale: selected ? 1.08 : 1,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.asset(
+            asset,
+            width: selected ? 28 : 24,
+            height: selected ? 28 : 24,
+            fit: BoxFit.cover,
+          ),
         ),
       ),
     );

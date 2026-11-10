@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../logic.dart';
 import '../models.dart';
-import '../services/voice.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -11,23 +11,21 @@ import 'english_page.dart';
 import 'focus_page.dart';
 import 'play.dart';
 import 'task_page.dart';
+import 'poem_page.dart';
+import 'vocab_page.dart';
+import '../poems/poems.dart';
+import '../vocab/schedule.dart';
+
+/// 临时：首页列出全部小游戏方便测试。测完改回 false。
+const kListAllGamesForTest = false;
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
-  String _hello(DateTime now) {
-    final hour = now.hour;
-    if (hour < 5) return '夜深了';
-    if (hour < 11) return '早安';
-    if (hour < 13) return '中午好';
-    if (hour < 18) return '下午好';
-    if (hour < 22) return '晚上好';
-    return '夜深了';
-  }
-
   @override
   Widget build(BuildContext context) {
     final store = context.watch<Store>();
+    final s = context.l10n;
     final today = DateTime.now();
     final key = store.todayKey;
     final all = tasksOn(store.data, key);
@@ -42,32 +40,32 @@ class HomePage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${today.month}月${today.day}日', style: const TextStyle(color: CamiColors.muted)),
-                  Text('${_hello(today)}，${store.data.childName}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
+                  Text(s.dateLabel(today), style: const TextStyle(color: CamiColors.muted)),
+                  Text('${s.hello(today)}, ${store.data.childName}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
                 ],
               ),
             ),
             IconButton(
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FocusPage())),
               icon: const Icon(Icons.timer_outlined, color: CamiColors.roseDeep),
-              tooltip: '番茄钟',
+              tooltip: s.pomodoro,
             ),
             FilledButton.tonal(
               onPressed: () async {
                 if (await askPin(context) && context.mounted) {
                   await context.read<Store>().setParentMode(true);
                 } else if (context.mounted) {
-                  toast(context, '密码不对');
+                  toast(context, s.wrongPin);
                 }
               },
-              child: const Text('家长端'),
+              child: Text(s.parentMode),
             ),
           ],
         ),
         const SizedBox(height: 12),
         RoseHeroBanner(
-          title: doneCount == all.length ? '今天都做完了' : '还差 ${all.length - doneCount} 件',
-          subtitle: '做完今天这 ${all.length} 件，小游戏才会亮',
+          title: doneCount == all.length ? s.allDoneToday : s.remainingTasks(all.length - doneCount),
+          subtitle: s.gameUnlockHint(all.length),
           height: 132,
         ),
         const SizedBox(height: 12),
@@ -105,10 +103,12 @@ class HomePage extends StatelessWidget {
   }
 
   Widget _card(BuildContext context, Store store, String subject) {
+    final s = context.l10n;
     final tasks = store.tasksFor(subject, store.todayKey);
     final done = tasks.where((t) => store.done(store.todayKey, t.id)).length;
     final pending = tasks.where((t) => !store.done(store.todayKey, t.id)).toList();
     final current = pending.isEmpty ? null : pending.first;
+    final label = s.subject(subject);
     return GlassPanel(
       margin: const EdgeInsets.only(bottom: 10),
       padding: EdgeInsets.zero,
@@ -121,20 +121,22 @@ class HomePage extends StatelessWidget {
       },
       child: ListTile(
         contentPadding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
-        leading: RoseAvatar(size: 52, label: subject.substring(0, 1), pale: true),
+        leading: RoseAvatar(size: 52, label: label.substring(0, 1), pale: true),
         title: Text(
-          subject,
+          label,
           style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, height: 1.1),
         ),
         subtitle: Text(
-          current == null ? '都完成了 · $done/${tasks.length}' : '下一件 · ${current.title} · $done/${tasks.length}',
+          current == null
+              ? s.allFinishedCount(done, tasks.length)
+              : s.nextTask(s.taskTitle(current.id, current.title), done, tasks.length),
           style: const TextStyle(fontSize: 13),
         ),
         trailing: current == null
             ? Image.asset(CamiAssets.rosePale, width: 28, height: 28)
             : FilledButton(
                 onPressed: () => _open(context, current),
-                child: const Text('开始'),
+                child: Text(s.start),
               ),
       ),
     );
@@ -145,13 +147,46 @@ class HomePage extends StatelessWidget {
       Navigator.push(context, MaterialPageRoute(builder: (_) => const EnglishPage()));
       return;
     }
-    Navigator.push(context, MaterialPageRoute(builder: (_) => TaskPage(task: task)));
+    _openTask(context, task as TaskTemplate);
   }
 
   Widget _game(BuildContext context, Store store) {
+    final s = context.l10n;
+    if (kListAllGamesForTest) {
+      return GlassPanel(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(s.gameTestTitle, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+            const SizedBox(height: 4),
+            Text(s.gameTestHint, style: const TextStyle(color: CamiColors.muted, fontSize: 12)),
+            const SizedBox(height: 12),
+            for (final kind in GameKind.values) ...[
+              RoseButton(
+                label: s.gameName(kind),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => PlayPage(kind: kind, testing: true)),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ],
+        ),
+      );
+    }
+
     final key = store.todayKey;
-    final game = gameTitles[store.todayGame()]!;
+    final game = s.gameName(store.todayGame());
     if (store.playable(key)) {
+      final remain = store.playSecondsLeftToday(key);
+      final mins = remain ~/ 60;
+      final secs = remain % 60;
+      final clock = '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+      final remainText = remain >= playBudgetSeconds ? s.playTenMinutes : s.playRemain(clock);
       return ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: SizedBox(
@@ -182,21 +217,18 @@ class HomePage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('今天抽到', style: TextStyle(color: Colors.white)),
+                    Text(s.todaysPick, style: const TextStyle(color: Colors.white)),
                     Text(game, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800)),
-                    const Text('可以玩 10 分钟', style: TextStyle(color: Colors.white)),
+                    Text(remainText, style: const TextStyle(color: Colors.white)),
                     const Spacer(),
                     RoseButton(
-                      label: '开始玩',
+                      label: remain >= playBudgetSeconds ? s.playStart : s.playContinue,
                       filled: false,
                       onPressed: () async {
-                        final played = await Navigator.push<bool>(
+                        await Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => PlayPage(kind: store.todayGame())),
                         );
-                        if (played == true && context.mounted) {
-                          await _askBonus(context);
-                        }
                       },
                     ),
                   ],
@@ -207,9 +239,7 @@ class HomePage extends StatelessWidget {
         ),
       );
     }
-    final hint = store.addableBonus(key)
-        ? '再做完一件新任务，可以再玩 10 分钟'
-        : '14 件都做完，这里才会亮';
+    final exhausted = store.playExhausted(key);
     return GlassPanel(
       child: Row(
         children: [
@@ -219,10 +249,14 @@ class HomePage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(store.addableBonus(key) ? '这轮已经玩过了' : '小游戏还没亮', style: const TextStyle(fontWeight: FontWeight.w800)),
-                Text(hint, style: const TextStyle(color: CamiColors.muted)),
-                if (store.addableBonus(key))
-                  TextButton(onPressed: () => _askBonus(context), child: const Text('接受新任务')),
+                Text(
+                  exhausted ? s.playTimeUsedUp : s.gameLocked,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  exhausted ? s.playTomorrow : s.gameUnlockNeed,
+                  style: const TextStyle(color: CamiColors.muted),
+                ),
               ],
             ),
           ),
@@ -230,45 +264,21 @@ class HomePage extends StatelessWidget {
       ),
     );
   }
+}
 
-  Future<void> _askBonus(BuildContext context) async {
-    final store = context.read<Store>();
-    await Voice.say('要不要接受一件新任务？');
-    if (!context.mounted) return;
-    final accept = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('要不要接受一件新任务？'),
-        content: const Text('接受后说出来就行，不用打字。做完这件，小游戏可以再开一次。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('今天就到这里')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('接受')),
-        ],
-      ),
-    );
-    if (accept != true || !context.mounted) return;
-    final heard = await Voice.listen();
-    if (!context.mounted) return;
-    if (heard == null) {
-      toast(context, '没听清，再说一次');
-      return;
-    }
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('听到的是'),
-        content: Text(heard),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('再说一次')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('就这件')),
-        ],
-      ),
-    );
-    if (ok == true) {
-      await store.addBonus(store.todayKey, heard);
-      if (context.mounted) toast(context, '已加到其他。做完就能再玩游戏');
-    }
-  }
+void _openTask(BuildContext context, TaskTemplate task) {
+  final isVocab = task.id == vocabTaskId || task.title.contains('单词');
+  final isPoem = isPoemTaskIdTitle(task.id, task.title);
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) {
+        if (isVocab) return const VocabPage();
+        if (isPoem) return PoemPage(task: task);
+        return TaskPage(task: task);
+      },
+    ),
+  );
 }
 
 class SubjectPage extends StatelessWidget {
@@ -278,16 +288,18 @@ class SubjectPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<Store>();
+    final s = context.l10n;
+    final label = s.subject(subject);
     final tasks = store.tasksFor(subject, store.todayKey);
     final done = tasks.where((t) => store.done(store.todayKey, t.id)).length;
     return RoseBackdrop(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppBar(backgroundColor: Colors.transparent, title: Text(subject)),
+        appBar: AppBar(backgroundColor: Colors.transparent, title: Text(label)),
         body: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            RoseHeroBanner(title: subject, subtitle: '$done / ${tasks.length} 已完成', height: 120),
+            RoseHeroBanner(title: label, subtitle: s.subjectProgress(done, tasks.length), height: 120),
             const SizedBox(height: 12),
             for (final task in tasks)
               GlassPanel(
@@ -297,13 +309,22 @@ class SubjectPage extends StatelessWidget {
                   leading: store.done(store.todayKey, task.id)
                       ? Image.asset(CamiAssets.rosePale, width: 28, height: 28)
                       : const Icon(Icons.circle_outlined, color: CamiColors.line),
-                  title: Text(task.title),
-                  subtitle: Text(taskMeta(task)),
+                  title: Text(s.taskTitle(task.id, task.title)),
+                  subtitle: Text(
+                    (task.id == vocabTaskId || task.title.contains('单词'))
+                        ? store.vocabTodayBadge()
+                        : (isPoemTaskIdTitle(task.id, task.title)
+                            ? store.poemTodayBadge()
+                            : taskMeta(task, s)),
+                  ),
                   trailing: store.done(store.todayKey, task.id)
-                      ? null
+                      ? TextButton(
+                          onPressed: () => _openTask(context, task),
+                          child: Text(s.view),
+                        )
                       : FilledButton(
-                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TaskPage(task: task))),
-                          child: Text(task.schoolOnly ? '打勾' : '开始'),
+                          onPressed: () => _openTask(context, task),
+                          child: Text(task.schoolOnly ? s.checkOff : s.start),
                         ),
                 ),
               ),

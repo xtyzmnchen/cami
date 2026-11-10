@@ -9,15 +9,15 @@ enum DayMark { future, open, red, yellow, green }
 
 enum Decor { none, berry, flower, crown }
 
-enum GameKind { snake, memory, catchFruit, maze, math, puzzle, runner }
+enum GameKind { snake, memory, catchFruit, sliceFruit, whackMole, match3, runner }
 
 const gameTitles = {
   GameKind.snake: '贪吃蛇',
   GameKind.memory: '翻翻乐',
   GameKind.catchFruit: '接水果',
-  GameKind.maze: '迷宫找皇冠',
-  GameKind.math: '口算星星',
-  GameKind.puzzle: '滑动拼图',
+  GameKind.sliceFruit: '切水果',
+  GameKind.whackMole: '打地鼠',
+  GameKind.match3: '消消乐',
   GameKind.runner: '小公主跑酷',
 };
 
@@ -81,22 +81,23 @@ bool allVisibleDone(AppData data, String date) {
   return tasks.every((t) => isDone(data, date, t.id));
 }
 
-int playsEarned(AppData data, String date) {
+const playBudgetSeconds = 10 * 60;
+
+/// 作业都做完后，当天一共可玩 10 分钟；中途退出保留剩余时间。
+int remainingPlaySeconds(AppData data, String date) {
   if (!allDefaultDone(data, date)) return 0;
-  final bonusDone = data.tasks
-      .where((t) => t.bonus && t.bonusDate == date && isDone(data, date, t.id))
-      .length;
-  return 1 + bonusDone;
+  if (data.playSecondsLeft.containsKey(date)) {
+    return data.playSecondsLeft[date]!.clamp(0, playBudgetSeconds);
+  }
+  // 兼容旧数据：曾经按「轮次」记过，视为今天已玩完。
+  if ((data.playsUsed[date] ?? 0) > 0) return 0;
+  return playBudgetSeconds;
 }
 
-bool canPlay(AppData data, String date) =>
-    playsEarned(data, date) > (data.playsUsed[date] ?? 0);
+bool canPlay(AppData data, String date) => remainingPlaySeconds(data, date) > 0;
 
-bool canAddBonus(AppData data, String date) {
-  final earned = playsEarned(data, date);
-  final used = data.playsUsed[date] ?? 0;
-  return allVisibleDone(data, date) && used > 0 && used >= earned;
-}
+bool playTimeExhausted(AppData data, String date) =>
+    allDefaultDone(data, date) && remainingPlaySeconds(data, date) <= 0;
 
 DayMark markFor(AppData data, DateTime day, DateTime today) {
   final d = dateOnly(day);
@@ -129,6 +130,146 @@ List<GameKind> weekGames(DateTime day) {
 }
 
 GameKind gameForDay(DateTime day) => weekGames(day)[day.weekday - 1];
+
+/// 合并两台设备的数据：进度 / 兑换 / 奖励都保留，积分自然一致。
+AppData mergeAppData(AppData local, AppData remote) {
+  final newer = remote.updatedAt.compareTo(local.updatedAt) >= 0 ? remote : local;
+  final older = identical(newer, remote) ? local : remote;
+
+  final tasks = <String, TaskTemplate>{};
+  for (final t in [...older.tasks, ...newer.tasks]) {
+    tasks[t.id] = t;
+  }
+
+  final progress = <String, TaskProgress>{};
+  for (final row in [...older.progress, ...newer.progress]) {
+    final key = '${row.date}|${row.taskId}';
+    final prev = progress[key];
+    if (prev == null) {
+      progress[key] = row;
+      continue;
+    }
+    progress[key] = _mergeProgress(prev, row);
+  }
+
+  final rewards = <String, Reward>{};
+  for (final r in [...older.rewards, ...newer.rewards]) {
+    rewards[r.id] = r;
+  }
+
+  final redemptions = <String, Redemption>{};
+  for (final r in [...older.redemptions, ...newer.redemptions]) {
+    redemptions[r.id] = r;
+  }
+  final redemptionList = redemptions.values.toList()
+    ..sort((a, b) => b.at.compareTo(a.at));
+
+  final plays = <String, int>{...older.playsUsed};
+  for (final e in newer.playsUsed.entries) {
+    plays[e.key] = max(plays[e.key] ?? 0, e.value);
+  }
+
+  final playLeft = <String, int>{...older.playSecondsLeft};
+  for (final e in newer.playSecondsLeft.entries) {
+    final prev = playLeft[e.key];
+    playLeft[e.key] = prev == null ? e.value : min(prev, e.value);
+  }
+
+  return AppData(
+    pinHash: newer.pinHash.isNotEmpty ? newer.pinHash : older.pinHash,
+    childName: newer.childName.trim().isNotEmpty ? newer.childName : older.childName,
+    updatedAt: DateTime.now().toIso8601String(),
+    tasks: tasks.values.toList(),
+    progress: progress.values.toList(),
+    rewards: rewards.values.toList(),
+    redemptions: redemptionList,
+    playsUsed: plays,
+    playSecondsLeft: playLeft,
+    vocab: mergeVocabState(local.vocab, remote.vocab),
+    poems: mergePoemState(local.poems, remote.poems),
+  );
+}
+
+PoemState mergePoemState(PoemState a, PoemState b) {
+  final days = <String, PoemDayRecord>{};
+  for (final d in [...a.days, ...b.days]) {
+    final prev = days[d.date];
+    if (prev == null) {
+      days[d.date] = PoemDayRecord(date: d.date, poemIndex: d.poemIndex, mastered: d.mastered);
+      continue;
+    }
+    days[d.date] = PoemDayRecord(
+      date: d.date,
+      poemIndex: prev.mastered ? prev.poemIndex : (d.mastered ? d.poemIndex : prev.poemIndex),
+      mastered: prev.mastered || d.mastered,
+    );
+  }
+  final sorted = days.values.toList()..sort((x, y) => x.date.compareTo(y.date));
+  final cont = a.continueIndex ?? b.continueIndex;
+  return PoemState(
+    nextIndex: max(a.nextIndex, b.nextIndex),
+    continueIndex: cont,
+    days: sorted,
+  );
+}
+
+VocabState mergeVocabState(VocabState a, VocabState b) {
+  final days = <String, VocabDayRecord>{};
+  for (final d in [...a.days, ...b.days]) {
+    final prev = days[d.date];
+    if (prev == null) {
+      days[d.date] = VocabDayRecord(
+        date: d.date,
+        mode: d.mode,
+        wordIndexes: [...d.wordIndexes],
+        mastered: [...d.mastered],
+      );
+      continue;
+    }
+    final indexes = <int>{...prev.wordIndexes, ...d.wordIndexes}.toList()..sort();
+    final mastered = <int>{...prev.mastered, ...d.mastered}.toList()..sort();
+    final mode = prev.mode == 'monthly' || d.mode == 'monthly'
+        ? 'monthly'
+        : (prev.mode == 'weekly' || d.mode == 'weekly' ? 'weekly' : 'daily');
+    days[d.date] = VocabDayRecord(
+      date: d.date,
+      mode: mode,
+      wordIndexes: indexes,
+      mastered: mastered,
+    );
+  }
+  final sorted = days.values.toList()..sort((x, y) => x.date.compareTo(y.date));
+  return VocabState(
+    nextIndex: max(a.nextIndex, b.nextIndex),
+    days: sorted,
+  );
+}
+
+TaskProgress _mergeProgress(TaskProgress a, TaskProgress b) {
+  final media = <String, MediaItem>{};
+  for (final m in [...a.media, ...b.media]) {
+    media[m.storedName.isNotEmpty ? m.storedName : m.id] = m;
+  }
+  final done = a.done || b.done;
+  final points = max(a.points, b.points);
+  final comment = b.comment.trim().isNotEmpty ? b.comment : a.comment;
+  final timer = () {
+    final at = a.timerEndsAt;
+    final bt = b.timerEndsAt;
+    if (at == null) return bt;
+    if (bt == null) return at;
+    return at.compareTo(bt) >= 0 ? at : bt;
+  }();
+  return TaskProgress(
+    taskId: a.taskId,
+    date: a.date,
+    done: done,
+    points: done ? (points > 0 ? points : max(a.points, b.points)) : 0,
+    comment: comment,
+    timerEndsAt: timer,
+    media: media.values.toList(),
+  );
+}
 
 String englishFileLabel(DateTime day, String type) =>
     'Cami_${DateFormat('yyyyMMdd').format(day)}_$type';

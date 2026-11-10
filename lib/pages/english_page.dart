@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/l10n.dart';
 import '../logic.dart';
 import '../models.dart';
 import '../services/capture.dart';
@@ -15,6 +16,8 @@ import '../store.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'task_page.dart';
+import 'vocab_page.dart';
+import '../vocab/schedule.dart';
 
 class EnglishPage extends StatelessWidget {
   const EnglishPage({super.key});
@@ -34,23 +37,23 @@ class EnglishPage extends StatelessWidget {
     final specialDone = checkIn != null && store.done(date, checkIn.id);
     final missing = englishTypes.where((type) => recordings.every((m) => m.englishType != type)).toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('英语打卡')),
+      appBar: AppBar(title: Text(context.l10n.englishCheckIn)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         children: [
           Text(
             checkIn == null
-                ? '还没有英语打卡这项，去家长端加一下'
+                ? context.l10n.noEnglishCheckIn
                 : specialDone
-                    ? '今天英语打卡已完成，下面还能听回录音'
+                    ? context.l10n.englishDoneListen
                     : allTypesRecorded
-                        ? '四条都录好了，可以打勾'
-                        : '选一个类型，四条都录完才能打勾',
+                        ? context.l10n.englishReadyToCheck
+                        : context.l10n.englishPickTypes,
             style: const TextStyle(color: CamiColors.muted),
           ),
           if (checkIn != null && !specialDone && missing.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text('还没录：${missing.join('、')}', style: const TextStyle(color: CamiColors.roseDeep, fontSize: 13)),
+            Text(context.l10n.stillMissing(missing.map(context.l10n.englishType).join(context.l10n.isEn ? ', ' : '、')), style: const TextStyle(color: CamiColors.roseDeep, fontSize: 13)),
           ],
           const SizedBox(height: 12),
           for (final type in englishTypes)
@@ -59,13 +62,13 @@ class EnglishPage extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: RoseButton(
-                label: specialDone ? '今天已打卡' : '这几条都录好了',
+                label: specialDone ? context.l10n.englishCheckedToday : context.l10n.englishAllRecorded,
                 onPressed: specialDone || !allTypesRecorded
                     ? null
                     : () async {
                         final error = await store.complete(date, checkIn.id);
                         if (!context.mounted) return;
-                        toast(context, error ?? '英语打卡已记下');
+                        toast(context, error ?? context.l10n.englishSaved);
                       },
               ),
             ),
@@ -76,17 +79,17 @@ class EnglishPage extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               side: const BorderSide(color: CamiColors.line),
             ),
-            title: const Text('去微信小程序打卡'),
-            subtitle: const Text('还没绑定指定页时，会先打开微信'),
-            trailing: const Text('打开', style: TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
+            title: Text(context.l10n.openWechatMini),
+            subtitle: Text(context.l10n.wechatBindHint),
+            trailing: Text(context.l10n.open, style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
             onTap: () => launchUrl(Uri.parse('weixin://'), mode: LaunchMode.externalApplication),
           ),
           const SizedBox(height: 16),
-          const Text('今天还有', style: TextStyle(color: CamiColors.muted, fontWeight: FontWeight.w700)),
+          Text(context.l10n.englishMoreToday, style: const TextStyle(color: CamiColors.muted, fontWeight: FontWeight.w700)),
           if (rest.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text('没有其他英语任务', style: TextStyle(color: CamiColors.muted)),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(context.l10n.noOtherEnglish, style: const TextStyle(color: CamiColors.muted)),
             ),
           for (final task in rest) _plain(context, store, task),
         ],
@@ -109,19 +112,21 @@ class EnglishPage extends StatelessWidget {
         children: [
           ListTile(
             leading: Icon(done ? Icons.check_circle : Icons.circle_outlined, color: done ? CamiColors.green : CamiColors.line),
-            title: Text(type),
-            subtitle: Text(done ? mine.first.label : '还没有录音'),
+            title: Text(context.l10n.englishType(type)),
+            subtitle: Text(
+              done ? context.l10n.mediaLabel(mine.first.label) : context.l10n.noRecordingYet,
+            ),
             trailing: done
                 ? Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        tooltip: '听录音',
+                        tooltip: context.l10n.listenRecording,
                         icon: const Icon(Icons.play_circle_outline, color: CamiColors.roseDeep),
                         onPressed: () => _play(context, store, mine.first),
                       ),
                       IconButton(
-                        tooltip: '分享',
+                        tooltip: context.l10n.share,
                         icon: const Icon(Icons.share),
                         onPressed: () {
                           final path = mine.first.path;
@@ -134,7 +139,7 @@ class EnglishPage extends StatelessWidget {
                           onPressed: task == null
                               ? null
                               : () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecordPage(task: task, type: type))),
-                          child: const Text('重录'),
+                          child: Text(context.l10n.reRecord),
                         ),
                     ],
                   )
@@ -142,7 +147,7 @@ class EnglishPage extends StatelessWidget {
                     onPressed: task == null || locked
                         ? null
                         : () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecordPage(task: task, type: type))),
-                    child: const Text('去录'),
+                    child: Text(context.l10n.goRecord),
                   ),
           ),
           if (done)
@@ -196,20 +201,30 @@ class EnglishPage extends StatelessWidget {
 
   Widget _plain(BuildContext context, Store store, TaskTemplate task) {
     final done = store.done(store.todayKey, task.id);
+    final isVocab = task.id == vocabTaskId || task.title.contains('单词');
+    void open() {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => isVocab ? const VocabPage() : TaskPage(task: task)),
+      );
+    }
+
     return Card(
       child: ListTile(
         leading: Icon(done ? Icons.check_circle : Icons.circle_outlined, color: done ? CamiColors.green : CamiColors.line),
-        title: Text(task.title),
-        subtitle: Text(done ? '已完成 · ${taskMeta(task)}' : taskMeta(task)),
+        title: Text(context.l10n.taskTitle(task.id, task.title)),
+        subtitle: Text(
+          isVocab
+              ? (done
+                  ? '${context.l10n.tr('已完成', 'Done')} · ${store.vocabTodayBadge()}'
+                  : store.vocabTodayBadge())
+              : (done
+                  ? '${context.l10n.tr('已完成', 'Done')} · ${taskMeta(task, context.l10n)}'
+                  : taskMeta(task, context.l10n)),
+        ),
         trailing: done
-            ? TextButton(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TaskPage(task: task))),
-                child: const Text('查看'),
-              )
-            : FilledButton(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TaskPage(task: task))),
-                child: const Text('开始'),
-              ),
+            ? TextButton(onPressed: open, child: Text(context.l10n.view))
+            : FilledButton(onPressed: open, child: Text(context.l10n.start)),
       ),
     );
   }
@@ -254,7 +269,7 @@ class _RecordPageState extends State<RecordPage> {
     final ok = await _recorder.start();
     if (!mounted) return;
     if (!ok) {
-      toast(context, '要用麦克风才能录音');
+      toast(context, context.l10n.needMic);
       return;
     }
     _recordTimer?.cancel();
@@ -270,6 +285,10 @@ class _RecordPageState extends State<RecordPage> {
 
   Future<void> _stopAndSave() async {
     if (!_recording || _saving) return;
+    if (_recordSeconds < 10) {
+      toast(context, context.l10n.recordTooShort);
+      return;
+    }
     setState(() => _saving = true);
     _recordTimer?.cancel();
     List<int>? bytes;
@@ -284,7 +303,7 @@ class _RecordPageState extends State<RecordPage> {
       _saving = false;
     });
     if (bytes == null || bytes.isEmpty) {
-      toast(context, '没有录到声音，再试一次');
+      toast(context, context.l10n.noSound);
       return;
     }
     final store = context.read<Store>();
@@ -300,7 +319,7 @@ class _RecordPageState extends State<RecordPage> {
     );
     if (!mounted) return;
     setState(() => _saved = item);
-    toast(context, '录音已保存');
+    toast(context, context.l10n.recordSaved);
   }
 
   Future<void> _speakNote() async {
@@ -311,7 +330,7 @@ class _RecordPageState extends State<RecordPage> {
     final zh = text == null ? '' : await toChinese(text);
     setState(() {
       _listening = false;
-      _heard = text ?? '没听清，再说一次';
+      _heard = text ?? context.l10n.didntCatch;
       _zh = zh;
     });
   }
@@ -319,13 +338,15 @@ class _RecordPageState extends State<RecordPage> {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<Store>();
-    final label = englishFileLabel(DateTime.now(), _type);
     return Scaffold(
-      appBar: AppBar(title: Text(_type)),
+      appBar: AppBar(title: Text(context.l10n.englishType(_type))),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         children: [
-          Text(label, style: const TextStyle(color: CamiColors.muted, fontWeight: FontWeight.w600)),
+          Text(
+            context.l10n.englishType(_type),
+            style: const TextStyle(color: CamiColors.muted, fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -333,7 +354,7 @@ class _RecordPageState extends State<RecordPage> {
             children: [
               for (final type in englishTypes)
                 ChoiceChip(
-                  label: Text(type),
+                  label: Text(context.l10n.englishType(type)),
                   selected: _type == type,
                   onSelected: (_recording || _saving || _saved != null)
                       ? null
@@ -356,11 +377,17 @@ class _RecordPageState extends State<RecordPage> {
                   const Icon(Icons.mic, color: CamiColors.roseDeep, size: 36),
                   const SizedBox(height: 8),
                   Text(
-                    _saving ? '正在保存…' : '正在录音 $_recordClock',
+                    _saving ? context.l10n.saving : context.l10n.recordingClock(_recordClock),
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 4),
-                  const Text('说完再点一下停止', style: TextStyle(color: CamiColors.muted)),
+                  Text(
+                    _recordSeconds < 10 ? context.l10n.recordNeedMore(10 - _recordSeconds) : context.l10n.stopWhenDone,
+                    style: TextStyle(
+                      color: _recordSeconds < 10 ? CamiColors.roseDeep : CamiColors.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 14),
                   FilledButton(
                     onPressed: _saving ? null : _stopAndSave,
@@ -369,7 +396,7 @@ class _RecordPageState extends State<RecordPage> {
                       minimumSize: const Size(160, 46),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
-                    child: Text(_saving ? '请稍等' : '停止并保存'),
+                    child: Text(_saving ? context.l10n.pleaseWait : context.l10n.stopAndSave),
                   ),
                 ],
               ),
@@ -386,7 +413,7 @@ class _RecordPageState extends State<RecordPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_saved!.label, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text(context.l10n.mediaLabel(_saved!.label), style: const TextStyle(fontWeight: FontWeight.w800)),
                   const SizedBox(height: 8),
                   SizedBox(
                     height: 96,
@@ -405,7 +432,7 @@ class _RecordPageState extends State<RecordPage> {
             ),
             const SizedBox(height: 12),
             RoseButton(
-              label: '录好了，返回',
+              label: context.l10n.recordedBack,
               onPressed: () => Navigator.pop(context),
             ),
             const SizedBox(height: 8),
@@ -417,7 +444,7 @@ class _RecordPageState extends State<RecordPage> {
                 });
                 _startRecord();
               },
-              child: const Text('再录一条'),
+              child: Text(context.l10n.recordAnother),
             ),
           ] else
             Container(
@@ -432,22 +459,22 @@ class _RecordPageState extends State<RecordPage> {
                 children: [
                   const Icon(Icons.mic_none, color: CamiColors.roseDeep, size: 40),
                   const SizedBox(height: 8),
-                  const Text('准备好了再点开始', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                  Text(context.l10n.readyThenStart, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                   const SizedBox(height: 14),
-                  RoseButton(label: '开始录音', onPressed: _startRecord),
+                  RoseButton(label: context.l10n.startRecord, onPressed: _startRecord),
                 ],
               ),
             ),
           const SizedBox(height: 16),
           OutlinedButton(
             onPressed: (_recording || _listening) ? null : _speakNote,
-            child: Text(_listening ? '正在听备注…' : '说出备注，译成中文（可选）'),
+            child: Text(_listening ? context.l10n.listeningNote : context.l10n.speakNoteOptional),
           ),
           if (_heard.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text('刚才说到\n$_heard'),
+            Text(context.l10n.justSaid(_heard)),
             const SizedBox(height: 8),
-            Text('中文备注\n$_zh', style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(context.l10n.zhNote(_zh), style: const TextStyle(fontWeight: FontWeight.w700)),
           ],
         ],
       ),

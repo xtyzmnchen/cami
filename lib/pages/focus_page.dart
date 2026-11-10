@@ -12,6 +12,7 @@ import '../task_day_view.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'task_page.dart';
+import '../l10n/l10n.dart';
 
 
 class FocusPage extends StatefulWidget {
@@ -42,8 +43,8 @@ class _FocusPageState extends State<FocusPage> {
     await Alerts.schedule(
       id: 88025,
       when: DateTime.now().add(Duration(seconds: seconds)),
-      title: '时间到了',
-      body: '专注了 $minutes 分钟',
+      title: context.l10n.timeUp,
+      body: context.l10n.focusMinutesBody(minutes),
     );
     timer?.cancel();
     timer = Timer.periodic(const Duration(seconds: 1), (_) async {
@@ -53,11 +54,11 @@ class _FocusPageState extends State<FocusPage> {
         setState(() => left = 0);
         await WakelockPlus.disable();
         SystemSound.play(SystemSoundType.alert);
-        await Voice.say('时间到了');
+        await Voice.say(context.l10n.timeUp);
         if (mounted) {
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const AlarmPage(title: '时间到了', subtitle: '番茄钟结束了')),
+            MaterialPageRoute(builder: (_) => AlarmPage(title: context.l10n.timeUp, subtitle: context.l10n.pomodoroEnded)),
           );
         }
         return;
@@ -80,14 +81,14 @@ class _FocusPageState extends State<FocusPage> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: const Text('确定退出吗？'),
-        content: const Text('番茄钟还在走，退出后这轮计时会停掉。'),
+        title: Text(context.l10n.confirmExit),
+        content: Text(context.l10n.pomodoroExitHint),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('继续专注')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(context.l10n.keepFocusing)),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(backgroundColor: CamiColors.roseDeep),
-            child: const Text('确定退出'),
+            child: Text(context.l10n.confirmLeave),
           ),
         ],
       ),
@@ -116,7 +117,7 @@ class _FocusPageState extends State<FocusPage> {
           backgroundColor: Colors.transparent,
           appBar: AppBar(
             backgroundColor: Colors.transparent,
-            title: const Text('番茄钟'),
+            title: Text(context.l10n.pomodoro),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back),
               onPressed: () async {
@@ -131,7 +132,7 @@ class _FocusPageState extends State<FocusPage> {
                 const Spacer(),
                 CountdownRing(label: clock, progress: ringProgress, size: 240, fontSize: 56),
                 const SizedBox(height: 12),
-                const Text('然后休息 5 分钟', style: TextStyle(color: CamiColors.muted)),
+                Text(context.l10n.thenRest5, style: const TextStyle(color: CamiColors.muted)),
                 const SizedBox(height: 16),
                 Wrap(
                   spacing: 8,
@@ -145,9 +146,9 @@ class _FocusPageState extends State<FocusPage> {
                   ],
                 ),
                 const Spacer(),
-                const Text('到点会叫你。按住小皇冠就能停下。', style: TextStyle(color: CamiColors.muted)),
+                Text(context.l10n.alarmHoldHint, style: const TextStyle(color: CamiColors.muted)),
                 const SizedBox(height: 12),
-                RoseButton(label: left == null ? '开始专注' : '正在专注', onPressed: left == null ? _start : null),
+                RoseButton(label: left == null ? context.l10n.startFocus : context.l10n.focusing, onPressed: left == null ? _start : null),
               ],
             ),
           ),
@@ -167,7 +168,7 @@ class SummaryPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       children: [
-        RoseHeroBanner(title: '今天 ${store.pointsOn(key)} 分', subtitle: '一日千里', height: 130),
+        RoseHeroBanner(title: context.l10n.todayPtsBanner(store.pointsOn(key)), subtitle: context.l10n.oneDayMile, height: 130),
         const SizedBox(height: 8),
         TaskDaySections(date: key),
       ],

@@ -32,7 +32,7 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>拍下作业，给爸爸妈妈看</string>
+	<string>拍下作业，并扫描同步电脑二维码</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>录音、说话打卡，还有到点提醒</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

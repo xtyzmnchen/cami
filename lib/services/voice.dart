@@ -6,18 +6,45 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 class Voice {
   static final _tts = FlutterTts();
-  static var _ready = false;
+  static String? _lang;
 
-  static Future<void> say(String text) async {
+  static Future<void> _speak(String text, String language, double rate) async {
     if (kIsWeb) return;
+    if (text.trim().isEmpty) return;
     try {
-      if (!_ready) {
-        await _tts.setLanguage('zh-CN');
-        await _tts.setSpeechRate(0.46);
-        _ready = true;
+      if (_lang != language) {
+        await _tts.setLanguage(language);
+        await _tts.setSpeechRate(rate);
+        _lang = language;
       }
       await _tts.stop();
       await _tts.speak(text);
+    } catch (_) {}
+  }
+
+  static Future<void> say(String text) => _speak(text, 'zh-CN', 0.46);
+
+  static Future<void> sayEn(String text) => _speak(text, 'en-US', 0.42);
+
+  /// 古诗朗诵：稍慢，并等说完再返回，方便逐句跟读。
+  static Future<void> sayPoem(String text) async {
+    if (kIsWeb) return;
+    if (text.trim().isEmpty) return;
+    try {
+      if (_lang != 'zh-CN') {
+        await _tts.setLanguage('zh-CN');
+        _lang = 'zh-CN';
+      }
+      await _tts.setSpeechRate(0.36);
+      await _tts.awaitSpeakCompletion(true);
+      await _tts.stop();
+      await _tts.speak(text);
+    } catch (_) {}
+  }
+
+  static Future<void> stop() async {
+    try {
+      await _tts.stop();
     } catch (_) {}
   }
 

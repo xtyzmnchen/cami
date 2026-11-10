@@ -3,8 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../store.dart';
+import '../sync_qr.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'server_scan_page.dart';
+import '../l10n/l10n.dart';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -57,10 +60,23 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
   }
 
   String get _subtitle => switch (step) {
-        1 => '欢迎回来，输入密码继续',
-        2 => '新号码，先认识一下孩子',
-        _ => '手机号登录，每人一份作业本',
+        1 => context.l10n.welcomeBack,
+        2 => context.l10n.newPhoneMeet,
+        _ => context.l10n.phoneLoginHint,
       };
+
+  Future<void> _scanServer() async {
+    final endpoint = await Navigator.of(context).push<SyncEndpoint>(
+      MaterialPageRoute(builder: (_) => const ServerScanPage()),
+    );
+    if (!mounted || endpoint == null) return;
+    setState(() {
+      server.text = endpoint.url;
+      token.text = endpoint.token;
+      showAdvanced = true;
+      error = null;
+    });
+  }
 
   Future<void> _next() async {
     setState(() {
@@ -217,9 +233,9 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('手机号', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              Text(context.l10n.phone, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               const SizedBox(height: 4),
-              const Text('先确认同步电脑，再查这个号码有没有注册', style: TextStyle(color: CamiColors.muted, fontSize: 13)),
+              Text(context.l10n.phoneConfirmHint, style: const TextStyle(color: CamiColors.muted, fontSize: 13)),
               const SizedBox(height: 16),
               TextField(
                 controller: phone,
@@ -228,30 +244,41 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                 maxLength: 11,
                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: 1.2),
                 decoration: _field(
-                  label: '11 位手机号',
+                  label: context.l10n.phone11,
                   hint: '13800000000',
                   prefix: const Icon(Icons.phone_iphone, color: CamiColors.roseDeep),
                 ),
               ),
               const SizedBox(height: 4),
-              InkWell(
-                onTap: () => setState(() => showAdvanced = !showAdvanced),
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      Icon(
-                        showAdvanced ? Icons.expand_less : Icons.expand_more,
-                        color: CamiColors.muted,
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => setState(() => showAdvanced = !showAdvanced),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Icon(
+                              showAdvanced ? Icons.expand_less : Icons.expand_more,
+                              color: CamiColors.muted,
+                            ),
+                            Text(
+                              showAdvanced ? context.l10n.collapseSync : context.l10n.syncSettings,
+                              style: const TextStyle(color: CamiColors.muted, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
                       ),
-                      Text(
-                        showAdvanced ? '收起同步设置' : '同步电脑设置',
-                        style: const TextStyle(color: CamiColors.muted, fontWeight: FontWeight.w600),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                  TextButton.icon(
+                    onPressed: busy ? null : _scanServer,
+                    icon: const Icon(Icons.qr_code_scanner, color: CamiColors.roseDeep),
+                    label: Text(context.l10n.scanFillUrl, style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
+                  ),
+                ],
               ),
               AnimatedCrossFade(
                 firstChild: const SizedBox.shrink(),
@@ -260,16 +287,21 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                     TextField(
                       controller: server,
                       decoration: _field(
-                        label: '同步地址',
+                        label: context.l10n.syncUrl,
                         hint: 'https://xxxx.cpolar.top',
                         prefix: const Icon(Icons.cloud_outlined, color: CamiColors.roseDeep),
+                        suffix: IconButton(
+                          tooltip: context.l10n.scanQr,
+                          onPressed: busy ? null : _scanServer,
+                          icon: const Icon(Icons.qr_code_scanner, color: CamiColors.roseDeep),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: token,
                       decoration: _field(
-                        label: '同步口令',
+                        label: context.l10n.syncPassphrase,
                         prefix: const Icon(Icons.key_outlined, color: CamiColors.roseDeep),
                       ),
                     ),
@@ -282,7 +314,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
           ),
         ),
         const SizedBox(height: 16),
-        RoseButton(label: busy ? '查询中…' : '下一步', onPressed: busy ? null : _next),
+        RoseButton(label: busy ? context.l10n.checking : context.l10n.nextStep, onPressed: busy ? null : _next),
       ],
     );
   }
@@ -304,7 +336,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('已注册账号', style: TextStyle(color: CamiColors.muted, fontSize: 12)),
+                        Text(context.l10n.registeredAccount, style: const TextStyle(color: CamiColors.muted, fontSize: 12)),
                         Text(phone.text, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
                       ],
                     ),
@@ -317,7 +349,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                 obscureText: obscure,
                 onSubmitted: (_) => busy ? null : _login(),
                 decoration: _field(
-                  label: '密码',
+                  label: context.l10n.password,
                   prefix: const Icon(Icons.lock_outline, color: CamiColors.roseDeep),
                   suffix: IconButton(
                     onPressed: () => setState(() => obscure = !obscure),
@@ -329,7 +361,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
           ),
         ),
         const SizedBox(height: 16),
-        RoseButton(label: busy ? '登录中…' : '进入小皇冠', onPressed: busy ? null : _login),
+        RoseButton(label: busy ? context.l10n.loggingIn : context.l10n.enterApp, onPressed: busy ? null : _login),
         const SizedBox(height: 8),
         TextButton(
           onPressed: busy
@@ -339,7 +371,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                     password.clear();
                     error = null;
                   }),
-          child: const Text('换一个手机号', style: TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
+          child: Text(context.l10n.changePhone, style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
         ),
       ],
     );
@@ -354,14 +386,14 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('注册 ${phone.text}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              Text(context.l10n.registerFor(phone.text), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               const SizedBox(height: 4),
-              const Text('这些信息只属于这个手机号', style: TextStyle(color: CamiColors.muted, fontSize: 13)),
+              Text(context.l10n.profileOnlyThisPhone, style: const TextStyle(color: CamiColors.muted, fontSize: 13)),
               const SizedBox(height: 16),
               TextField(
                 controller: name,
                 decoration: _field(
-                  label: '孩子的名字',
+                  label: context.l10n.childName,
                   prefix: const Icon(Icons.favorite_outline, color: CamiColors.roseDeep),
                 ),
               ),
@@ -371,12 +403,12 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: _field(
-                  label: '年龄',
+                  label: context.l10n.age,
                   prefix: const Icon(Icons.cake_outlined, color: CamiColors.roseDeep),
                 ),
               ),
               const SizedBox(height: 14),
-              const Text('年级', style: TextStyle(fontWeight: FontWeight.w700)),
+              Text(context.l10n.gradeLabel, style: const TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -384,7 +416,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                 children: [
                   for (final g in ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级'])
                     ChoiceChip(
-                      label: Text(g),
+                      label: Text(context.l10n.gradeName(g)),
                       selected: grade == g,
                       selectedColor: CamiColors.blush,
                       labelStyle: TextStyle(
@@ -397,7 +429,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                 ],
               ),
               const SizedBox(height: 14),
-              const Text('兴趣', style: TextStyle(fontWeight: FontWeight.w700)),
+              Text(context.l10n.interests, style: const TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -405,7 +437,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                 children: [
                   for (final item in interestChips)
                     FilterChip(
-                      label: Text(item),
+                      label: Text(context.l10n.interestName(item)),
                       selected: selectedInterests.contains(item),
                       selectedColor: CamiColors.blush,
                       checkmarkColor: CamiColors.roseDeep,
@@ -430,7 +462,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
               TextField(
                 controller: interests,
                 decoration: _field(
-                  label: '其他兴趣（可空）',
+                  label: context.l10n.otherInterests,
                   prefix: const Icon(Icons.auto_awesome_outlined, color: CamiColors.roseDeep),
                 ),
               ),
@@ -439,7 +471,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                 controller: password,
                 obscureText: obscure,
                 decoration: _field(
-                  label: '设置密码（至少 4 位）',
+                  label: context.l10n.setPassword,
                   prefix: const Icon(Icons.lock_outline, color: CamiColors.roseDeep),
                   suffix: IconButton(
                     onPressed: () => setState(() => obscure = !obscure),
@@ -451,7 +483,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
           ),
         ),
         const SizedBox(height: 16),
-        RoseButton(label: busy ? '注册中…' : '注册并进入', onPressed: busy ? null : _register),
+        RoseButton(label: busy ? context.l10n.registering : context.l10n.registerAndEnter, onPressed: busy ? null : _register),
         const SizedBox(height: 8),
         TextButton(
           onPressed: busy
@@ -460,7 +492,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                     step = 0;
                     error = null;
                   }),
-          child: const Text('返回', style: TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
+          child: Text(context.l10n.back, style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
         ),
       ],
     );
@@ -519,9 +551,9 @@ class _HeroHeader extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                const Text(
-                  '小皇冠',
-                  style: TextStyle(
+                Text(
+                  context.l10n.appTitle,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 34,
                     fontWeight: FontWeight.w900,
@@ -557,7 +589,7 @@ class _StepDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final labels = ['手机号', step == 2 ? '注册' : '登录', '进入'];
+    final labels = [context.l10n.phone, step == 2 ? context.l10n.register : context.l10n.login, context.l10n.tr('进入', 'Go')];
     final active = step == 0
         ? 0
         : step == 1 || step == 2

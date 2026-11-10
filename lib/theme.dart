@@ -28,6 +28,10 @@ class CamiAssets {
   static const roseHero = 'assets/images/rose.png';
   static const crownBadge = 'assets/images/crown_badge.png';
   static const appIcon = 'assets/icon/app_icon.png';
+  static const tabToday = 'assets/images/tab_today.jpg';
+  static const tabCalendar = 'assets/images/tab_calendar.jpg';
+  static const tabPoints = 'assets/images/tab_points.jpg';
+  static const tabSummary = 'assets/images/tab_summary.jpg';
 }
 
 ThemeData camiTheme() {

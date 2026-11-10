@@ -14,6 +14,7 @@ import '../storage/files.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../l10n/l10n.dart';
 
 class TaskPage extends StatefulWidget {
   const TaskPage({super.key, required this.task});
@@ -95,8 +96,11 @@ class _TaskPageState extends State<TaskPage> {
     await Alerts.schedule(
       id: widget.task.id.hashCode,
       when: endsAt,
-      title: '时间到了',
-      body: '${widget.task.title}，${widget.task.minutes} 分钟到了',
+      title: context.l10n.timeUp,
+      body: context.l10n.taskTimeUpBody(
+        context.l10n.taskTitle(widget.task.id, widget.task.title),
+        widget.task.minutes,
+      ),
     );
     _tickFrom(endsAt, announce: true);
   }
@@ -120,15 +124,15 @@ class _TaskPageState extends State<TaskPage> {
         if (!announce || _alarmShown || !mounted) return;
         _alarmShown = true;
         SystemSound.play(SystemSoundType.alert);
-        await Voice.say('时间到了。${widget.task.title}，这${widget.task.minutes}分钟到了。');
+        await Voice.say(
+          '${context.l10n.timeUp}. ${context.l10n.taskTimeUpBody(context.l10n.taskTitle(widget.task.id, widget.task.title), widget.task.minutes)}',
+        );
         if (mounted) {
           await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => const _AlarmPage(
-                title: '时间到了',
-                subtitle: '这件作业的时间到了',
-              ),
+              builder: (_) =>
+                  _AlarmPage(title: context.l10n.timeUp, subtitle: context.l10n.taskTimeUpSubtitle),
             ),
           );
         }
@@ -152,7 +156,7 @@ class _TaskPageState extends State<TaskPage> {
       _alarmShown = false;
     });
     if (!mounted) return;
-    toast(context, '已结束这轮计时');
+    toast(context, context.l10n.timerStopped);
   }
 
   Future<void> _add(String kind) async {
@@ -178,7 +182,7 @@ class _TaskPageState extends State<TaskPage> {
       final ok = await _recorder.start();
       if (!mounted) return;
       if (!ok) {
-        toast(context, '要用麦克风才能录音');
+        toast(context, context.l10n.needMic);
         return;
       }
       _recordTimer?.cancel();
@@ -190,6 +194,11 @@ class _TaskPageState extends State<TaskPage> {
         if (!mounted) return;
         setState(() => _recordSeconds++);
       });
+      return;
+    }
+    final seconds = _recordSeconds;
+    if (seconds < 10) {
+      toast(context, context.l10n.recordTooShort);
       return;
     }
     setState(() => _savingAudio = true);
@@ -207,7 +216,7 @@ class _TaskPageState extends State<TaskPage> {
       _recordSeconds = 0;
     });
     if (bytes == null || bytes.isEmpty) {
-      toast(context, '没有录到声音，再试一次');
+      toast(context, context.l10n.noSound);
       return;
     }
     final store = context.read<Store>();
@@ -218,7 +227,7 @@ class _TaskPageState extends State<TaskPage> {
       label: widget.task.title,
       bytes: bytes,
     );
-    if (mounted) toast(context, '录音已保存');
+    if (mounted) toast(context, context.l10n.recordSaved);
   }
 
   String get _recordClock {
@@ -253,35 +262,55 @@ class _TaskPageState extends State<TaskPage> {
         : '${(_left! ~/ 60).toString().padLeft(2, '0')}:${(_left! % 60).toString().padLeft(2, '0')}';
     final ringProgress = _left == null || total <= 0 ? 1.0 : _left! / total;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.task.subject)),
+      appBar: AppBar(title: Text(context.l10n.subject(widget.task.subject))),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         children: [
-          Text(widget.task.title, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+          Text(
+            context.l10n.taskTitle(widget.task.id, widget.task.title),
+            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 4),
-          Text('${widget.task.minutes} 分钟 · ${widget.task.points} 分', style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
+          Text(
+            context.l10n.minutesPts(widget.task.minutes, widget.task.points),
+            style: const TextStyle(
+              color: CamiColors.roseDeep,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: 16),
-          Center(child: CountdownRing(label: clock, progress: ringProgress, size: 220, fontSize: 52)),
+          Center(
+            child: CountdownRing(
+              label: clock,
+              progress: ringProgress,
+              size: 220,
+              fontSize: 52,
+            ),
+          ),
           const SizedBox(height: 8),
           Text(
             _running
-                ? '进行中'
+                ? context.l10n.inProgress
                 : _finishedRound
-                    ? '这轮时间到了'
-                    : '还没开始',
+                ? context.l10n.roundTimeUp
+                : context.l10n.notStartedYet,
             textAlign: TextAlign.center,
             style: const TextStyle(color: CamiColors.muted),
           ),
           const SizedBox(height: 12),
           if (widget.task.minutes > 0 && !_running)
             RoseButton(
-              label: _finishedRound ? '再来一轮' : '接受挑战',
+              label: _finishedRound ? context.l10n.anotherRound : context.l10n.acceptChallenge,
               onPressed: _start,
             ),
           if (widget.task.minutes > 0 && _running) ...[
-            RoseButton(label: '结束计时', onPressed: _stopChallenge),
+            RoseButton(label: context.l10n.endTimer, onPressed: _stopChallenge),
             const SizedBox(height: 8),
-            const Text('离开页面后，倒计时会继续，再进来接着走。', textAlign: TextAlign.center, style: TextStyle(color: CamiColors.muted, fontSize: 12)),
+            Text(
+              context.l10n.timerKeepsGoing,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: CamiColors.muted, fontSize: 12),
+            ),
           ],
           const SizedBox(height: 16),
           if (_recording || _savingAudio) ...[
@@ -298,20 +327,31 @@ class _TaskPageState extends State<TaskPage> {
                   const Icon(Icons.mic, color: CamiColors.roseDeep, size: 36),
                   const SizedBox(height: 8),
                   Text(
-                    _savingAudio ? '正在保存…' : '正在录音 $_recordClock',
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                    _savingAudio ? context.l10n.saving : context.l10n.recordingClock(_recordClock),
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 4),
-                  const Text('说完再点一下停止', style: TextStyle(color: CamiColors.muted)),
+                  Text(
+                    _recordSeconds < 10 ? context.l10n.recordNeedMore(10 - _recordSeconds) : context.l10n.stopWhenDone,
+                    style: TextStyle(
+                      color: _recordSeconds < 10 ? CamiColors.roseDeep : CamiColors.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 14),
                   FilledButton(
                     onPressed: _savingAudio ? null : _toggleRecord,
                     style: FilledButton.styleFrom(
                       backgroundColor: CamiColors.roseDeep,
                       minimumSize: const Size(160, 46),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
-                    child: Text(_savingAudio ? '请稍等' : '停止并保存'),
+                    child: Text(_savingAudio ? context.l10n.pleaseWait : context.l10n.stopAndSave),
                   ),
                 ],
               ),
@@ -321,9 +361,9 @@ class _TaskPageState extends State<TaskPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _cap(Icons.photo_camera, '拍照', () => _add('photo')),
-                _cap(Icons.videocam, '录像', () => _add('video')),
-                _cap(Icons.mic, '录音', () => _add('audio')),
+                _cap(Icons.photo_camera, context.l10n.takePhoto, () => _add('photo')),
+                _cap(Icons.videocam, context.l10n.takeVideo, () => _add('video')),
+                _cap(Icons.mic, context.l10n.takeAudio, () => _add('audio')),
               ],
             ),
           if (!_recording) const SizedBox(height: 16),
@@ -334,13 +374,16 @@ class _TaskPageState extends State<TaskPage> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: CamiColors.line),
               ),
-              child: const Text('还没有照片、视频或录音', style: TextStyle(color: CamiColors.muted)),
+              child: Text(
+                context.l10n.noMediaYet,
+                style: const TextStyle(color: CamiColors.muted),
+              ),
             )
           else
             ...row.media.map((item) => _mediaTile(context, store, item)),
           const SizedBox(height: 16),
           RoseButton(
-            label: '我完成了',
+            label: context.l10n.iFinished,
             filled: row != null && row.media.isNotEmpty,
             onPressed: _finish,
           ),
@@ -354,7 +397,11 @@ class _TaskPageState extends State<TaskPage> {
       onTap: onTap,
       child: Column(
         children: [
-          CircleAvatar(radius: 30, backgroundColor: CamiColors.blush, child: Icon(icon, color: CamiColors.roseDeep)),
+          CircleAvatar(
+            radius: 30,
+            backgroundColor: CamiColors.blush,
+            child: Icon(icon, color: CamiColors.roseDeep),
+          ),
           const SizedBox(height: 6),
           Text(label),
         ],
@@ -379,13 +426,24 @@ class _AlarmPage extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(title, style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w700)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 36,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Text(subtitle, style: const TextStyle(color: Colors.white70)),
                 const SizedBox(height: 28),
                 const _HoldStop(),
                 const SizedBox(height: 16),
-                const Text('按住两秒就会停下\n妈妈输入密码可以马上关', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+                Text(
+                  context.l10n.holdToStopAlarm,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70),
+                ),
               ],
             ),
           ),
@@ -413,7 +471,7 @@ class _HoldStopState extends State<_HoldStop> {
       final p = DateTime.now().difference(started).inMilliseconds / 2000;
       if (p >= 1) {
         _timer?.cancel();
-        Voice.say('闹钟停下了');
+        Voice.say(context.l10n.alarmStopped);
         if (mounted) Navigator.pop(context);
         return;
       }
@@ -447,7 +505,10 @@ class _HoldStopState extends State<_HoldStop> {
           color: const Color(0xFFFFD6E8),
           border: Border.all(color: Colors.white24, width: 10),
         ),
-        child: Text(_progress == 0 ? '按住小皇冠' : '${(_progress * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.w700)),
+        child: Text(
+          _progress == 0 ? context.l10n.holdCrown : '${(_progress * 100).round()}%',
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
       ),
     );
   }
@@ -456,13 +517,23 @@ class _HoldStopState extends State<_HoldStop> {
 Widget _mediaTile(BuildContext context, Store store, MediaItem item) {
   return Card(
     child: ListTile(
-      title: Text(item.label.isEmpty ? item.storedName : item.label),
-      subtitle: Text(item.kind == 'photo' ? '照片' : item.kind == 'video' ? '视频' : '录音'),
+      title: Text(
+        item.label.isEmpty ? item.storedName : context.l10n.mediaLabel(item.label),
+      ),
+      subtitle: Text(
+        item.kind == 'photo'
+            ? context.l10n.photo
+            : item.kind == 'video'
+            ? context.l10n.video
+            : context.l10n.audio,
+      ),
       trailing: IconButton(
         icon: const Icon(Icons.share),
         onPressed: () {
           if (item.path.isEmpty) return;
-          SharePlus.instance.share(ShareParams(files: [XFile(item.path)], text: item.label));
+          SharePlus.instance.share(
+            ShareParams(files: [XFile(item.path)], text: item.label),
+          );
         },
       ),
       onTap: () {
@@ -493,5 +564,6 @@ class AlarmPage extends StatelessWidget {
   final String subtitle;
 
   @override
-  Widget build(BuildContext context) => _AlarmPage(title: title, subtitle: subtitle);
+  Widget build(BuildContext context) =>
+      _AlarmPage(title: title, subtitle: subtitle);
 }

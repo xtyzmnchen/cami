@@ -6,9 +6,13 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import 'l10n/l10n.dart';
 import 'logic.dart';
 import 'models.dart';
 import 'storage/files.dart';
+import 'poems/poems.dart';
+import 'vocab/schedule.dart';
+import 'vocab/words.dart';
 
 class Store extends ChangeNotifier {
   Store() {
@@ -34,6 +38,8 @@ class Store extends ChangeNotifier {
   DateTime? lastSync;
   bool syncing = false;
   bool parentMode = false;
+  /// 'zh' | 'en' — 家长设置里切换，本机持久化。
+  String localeCode = 'zh';
   bool _pushAgain = false;
   final uploaded = <String>{};
   Timer? _syncTimer;
@@ -60,6 +66,7 @@ class Store extends ChangeNotifier {
     sessionId = prefs.getString('cami_session') ?? '';
     phone = prefs.getString('cami_phone') ?? '';
     parentMode = prefs.getBool('cami_parent_mode') == true;
+    localeCode = prefs.getString('cami_locale') == 'en' ? 'en' : 'zh';
     final profileRaw = prefs.getString('cami_profile');
     if (profileRaw != null && profileRaw.isNotEmpty) {
       try {
@@ -79,6 +86,10 @@ class Store extends ChangeNotifier {
     } catch (_) {}
     await _repairEnglishCheckIn();
     notifyListeners();
+    // 启动后立刻拉云端并合并，避免两台设备积分/进度不一致
+    if (isLoggedIn && serverUrl.isNotEmpty) {
+      unawaited(syncPull(pushAfterMerge: true));
+    }
   }
 
   String get _uploadedKey => phone.isEmpty ? 'cami_uploaded' : 'cami_uploaded_$phone';
@@ -88,17 +99,17 @@ class Store extends ChangeNotifier {
   bool validPhone(String raw) => RegExp(r'^1\d{10}$').hasMatch(_normPhone(raw));
 
   Future<bool> checkPhoneExists(String rawPhone) async {
-    if (serverUrl.isEmpty) throw Exception('先填写同步电脑地址');
+    if (serverUrl.isEmpty) throw Exception(l10n.errNeedSyncUrl);
     final phoneNo = _normPhone(rawPhone);
-    if (!validPhone(phoneNo)) throw Exception('手机号不对');
+    if (!validPhone(phoneNo)) throw Exception(l10n.errBadPhone);
     final res = await http
         .get(
           Uri.parse(_authed('/api/account/check?phone=${Uri.encodeQueryComponent(phoneNo)}')),
           headers: _gateHeaders,
         )
         .timeout(const Duration(seconds: 15));
-    if (res.statusCode == 401) throw Exception('同步口令不对');
-    if (res.statusCode >= 300) throw Exception('查不到服务器');
+    if (res.statusCode == 401) throw Exception(l10n.errBadToken);
+    if (res.statusCode >= 300) throw Exception(l10n.errNoServer);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     return body['exists'] == true;
   }
@@ -111,11 +122,11 @@ class Store extends ChangeNotifier {
     required String grade,
     required String interests,
   }) async {
-    if (serverUrl.isEmpty) return '先填写同步电脑地址';
+    if (serverUrl.isEmpty) return l10n.errNeedSyncUrl;
     final phoneNo = _normPhone(rawPhone);
-    if (!validPhone(phoneNo)) return '手机号不对';
-    if (password.length < 4) return '密码至少 4 位';
-    if (name.trim().isEmpty) return '请填写名字';
+    if (!validPhone(phoneNo)) return l10n.errBadPhone;
+    if (password.length < 4) return l10n.errPasswordShort;
+    if (name.trim().isEmpty) return l10n.errNeedName;
     final res = await http
         .post(
           Uri.parse(_authed('/api/register')),
@@ -131,15 +142,15 @@ class Store extends ChangeNotifier {
         )
         .timeout(const Duration(seconds: 20));
     final body = _decodeMap(res.body);
-    if (res.statusCode >= 300) return '${body['error'] ?? '注册失败'}';
+    if (res.statusCode >= 300) return '${body['error'] ?? l10n.errRegisterFail}';
     await _applyAuth(body);
     return null;
   }
 
   Future<String?> login({required String rawPhone, required String password}) async {
-    if (serverUrl.isEmpty) return '先填写同步电脑地址';
+    if (serverUrl.isEmpty) return l10n.errNeedSyncUrl;
     final phoneNo = _normPhone(rawPhone);
-    if (!validPhone(phoneNo)) return '手机号不对';
+    if (!validPhone(phoneNo)) return l10n.errBadPhone;
     final res = await http
         .post(
           Uri.parse(_authed('/api/login')),
@@ -148,7 +159,7 @@ class Store extends ChangeNotifier {
         )
         .timeout(const Duration(seconds: 20));
     final body = _decodeMap(res.body);
-    if (res.statusCode >= 300) return '${body['error'] ?? '登录失败'}';
+    if (res.statusCode >= 300) return '${body['error'] ?? l10n.errLoginFail}';
     await _applyAuth(body);
     return null;
   }
@@ -178,15 +189,12 @@ class Store extends ChangeNotifier {
       final raw = await readState();
       if (raw != null && raw.isNotEmpty) {
         data = AppData.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-      } else {
-        await writeState(jsonEncode(data.toJson()));
       }
-    } catch (_) {
-      await writeState(jsonEncode(data.toJson()));
-    }
+      // 不在这里 write 空数据：先拉服务器再合并，避免新时间戳把云端积分盖掉
+    } catch (_) {}
     await _repairEnglishCheckIn();
     notifyListeners();
-    unawaited(syncPull());
+    await syncPull(pushAfterMerge: true);
   }
 
   Future<void> logout() async {
@@ -210,7 +218,16 @@ class Store extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('cami_parent_mode', value);
     notifyListeners();
-    if (value) unawaited(syncPull());
+    if (value) unawaited(syncPull(pushAfterMerge: true));
+  }
+
+  AppL10n get l10n => AppL10n.fromCode(localeCode);
+
+  Future<void> setLocaleCode(String code) async {
+    localeCode = code == 'en' ? 'en' : 'zh';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cami_locale', localeCode);
+    notifyListeners();
   }
 
   /// 防止「英语打卡」丢掉特殊标记后，四条录音对不上、看起来像任务消失。
@@ -318,7 +335,8 @@ class Store extends ChangeNotifier {
   int get balance => pointBalance(data);
 
   bool playable(String date) => canPlay(data, date);
-  bool addableBonus(String date) => canAddBonus(data, date);
+  bool playExhausted(String date) => playTimeExhausted(data, date);
+  int playSecondsLeftToday([String? date]) => remainingPlaySeconds(data, date ?? todayKey);
   GameKind todayGame([DateTime? day]) => gameForDay(day ?? DateTime.now());
 
   TaskProgress _ensure(String date, String taskId) {
@@ -441,15 +459,27 @@ class Store extends ChangeNotifier {
 
   Future<String?> complete(String date, String taskId) async {
     final task = taskById(taskId);
-    if (task == null) return '找不到这件作业';
+    if (task == null) return l10n.errTaskNotFound;
     final row = _ensure(date, taskId);
-    if (row.media.isEmpty && !task.schoolOnly) {
-      return '请先完成后再点击哦';
+    final isVocab = taskId == vocabTaskId || task.title.contains('单词');
+    final isPoem = isPoemTaskIdTitle(taskId, task.title);
+    if (isVocab) {
+      final session = data.vocab.dayOf(date);
+      if (session == null || !session.done) {
+        return l10n.errVocabNotDone;
+      }
+    } else if (isPoem) {
+      final session = data.poems.dayOf(date);
+      if (session == null || !session.mastered) {
+        return l10n.errPoemNotDone;
+      }
+    } else if (row.media.isEmpty && !task.schoolOnly) {
+      return l10n.errFinishFirst;
     }
     if (task.englishSpecial) {
       final missing = englishTypes.where((type) => row.media.every((m) => m.englishType != type)).toList();
       if (missing.isNotEmpty) {
-        return '还没录完：${missing.join('、')}';
+        return l10n.errStillRecord(missing.map(l10n.englishType).join(l10n.isEn ? ', ' : '、'));
       }
     }
     row.done = true;
@@ -457,6 +487,129 @@ class Store extends ChangeNotifier {
     row.timerEndsAt = null;
     await save();
     return null;
+  }
+
+  VocabDayRecord ensureVocabToday([DateTime? now]) {
+    final day = now ?? DateTime.now();
+    final key = dayKey(day);
+    final existing = data.vocab.dayOf(key);
+    if (existing != null) return existing;
+
+    final mode = vocabModeFor(day, data.vocab);
+    final indexes = assignWordIndexes(mode: mode, state: data.vocab, day: day);
+    final record = VocabDayRecord(
+      date: key,
+      mode: vocabModeKey(mode),
+      wordIndexes: indexes,
+      mastered: [],
+    );
+    if (mode == VocabMode.daily && indexes.isNotEmpty) {
+      data.vocab.nextIndex = (indexes.last + 1).clamp(0, vocabBankSize);
+    }
+    data.vocab.days.add(record);
+    data.vocab.days.sort((a, b) => a.date.compareTo(b.date));
+    unawaited(save());
+    return record;
+  }
+
+  Future<void> masterVocabWord(String date, int wordIndex) async {
+    final row = data.vocab.dayOf(date) ?? ensureVocabToday();
+    if (row.date != date) return;
+    if (!row.wordIndexes.contains(wordIndex)) return;
+    if (!row.mastered.contains(wordIndex)) {
+      row.mastered.add(wordIndex);
+    }
+    await save();
+    if (row.done) {
+      await complete(date, vocabTaskId);
+    }
+  }
+
+  String vocabTodayBadge([String? date]) {
+    final key = date ?? todayKey;
+    final row = data.vocab.dayOf(key);
+    if (row == null) {
+      final mode = vocabModeFor(DateTime.now(), data.vocab);
+      final preview = assignWordIndexes(mode: mode, state: data.vocab, day: DateTime.now());
+      final n = preview.isEmpty ? vocabDailyCount : preview.length;
+      return l10n.vocabBadgePreview(vocabModeKey(mode), n);
+    }
+    return l10n.vocabBadge(row.mode, row.mastered.length, row.wordIndexes.length);
+  }
+
+  List<VocabDayRecord> vocabHistory() {
+    final list = [...data.vocab.days]..sort((a, b) => b.date.compareTo(a.date));
+    return list;
+  }
+
+  PoemDayRecord ensurePoemToday([DateTime? now]) {
+    final day = now ?? DateTime.now();
+    final key = dayKey(day);
+    final existing = data.poems.dayOf(key);
+    if (existing != null) return existing;
+
+    final cont = data.poems.continueIndex;
+    final index = (cont != null && cont >= 0 && cont < poemBankSize)
+        ? cont
+        : data.poems.nextIndex.clamp(0, poemBankSize);
+    final record = PoemDayRecord(
+      date: key,
+      poemIndex: index >= poemBankSize ? poemBankSize - 1 : index,
+      mastered: false,
+    );
+    data.poems.days.add(record);
+    data.poems.days.sort((a, b) => a.date.compareTo(b.date));
+    unawaited(save());
+    return record;
+  }
+
+  /// 背熟：推进下一首，完成作业。
+  Future<void> masterPoemToday(String taskId) async {
+    final key = todayKey;
+    final row = data.poems.dayOf(key) ?? ensurePoemToday();
+    row.mastered = true;
+    if (data.poems.continueIndex == row.poemIndex) {
+      data.poems.continueIndex = null;
+    }
+    data.poems.nextIndex = (row.poemIndex + 1).clamp(0, poemBankSize);
+    await save();
+    await complete(key, taskId);
+  }
+
+  /// 没背熟：明天继续同一首，今天作业不打勾。
+  Future<void> deferPoemToday() async {
+    final key = todayKey;
+    final row = data.poems.dayOf(key) ?? ensurePoemToday();
+    row.mastered = false;
+    data.poems.continueIndex = row.poemIndex;
+    final progressRow = progress(key, poemTaskId);
+    if (progressRow != null) {
+      progressRow.done = false;
+      progressRow.points = 0;
+    }
+    // 也清掉标题含「古诗」的其它任务今日完成状态
+    for (final task in data.tasks) {
+      if (!isPoemTaskIdTitle(task.id, task.title)) continue;
+      final p = progress(key, task.id);
+      if (p != null) {
+        p.done = false;
+        p.points = 0;
+      }
+    }
+    await save();
+  }
+
+  String poemTodayBadge() {
+    final row = data.poems.dayOf(todayKey);
+    final index = row?.poemIndex ?? data.poems.continueIndex ?? data.poems.nextIndex;
+    final poem = poemAt(index.clamp(0, poemBankSize - 1));
+    if (poem == null) return l10n.tr('古诗库已学完', 'Poem bank finished');
+    final tag = row?.mastered == true
+        ? l10n.tr('已背熟', 'Mastered')
+        : (data.poems.continueIndex == index
+            ? l10n.tr('继续背', 'Continue')
+            : l10n.tr('今日', 'Today'));
+    return '$tag · ${poem.title}';
   }
 
   Future<void> parentConfirmSchool(String date, String taskId) async {
@@ -502,22 +655,13 @@ class Store extends ChangeNotifier {
 
   String newId() => _uuid.v4();
 
-  Future<void> finishPlay(String date) async {
-    data.playsUsed[date] = (data.playsUsed[date] ?? 0) + 1;
-    await save();
-  }
-
-  Future<void> addBonus(String date, String title) async {
-    data.tasks.add(TaskTemplate(
-      id: _uuid.v4(),
-      subject: '其他',
-      title: title.trim().isEmpty ? '新任务' : title.trim(),
-      minutes: 15,
-      points: 1,
-      bonus: true,
-      bonusDate: date,
-      note: '做完可以再玩一次',
-    ));
+  /// 写入当天剩余游戏秒数；为 0 后不能再进。
+  Future<void> savePlaySecondsLeft(String date, int seconds) async {
+    data.playSecondsLeft[date] = seconds.clamp(0, playBudgetSeconds);
+    if (seconds <= 0) {
+      final prev = data.playsUsed[date] ?? 0;
+      data.playsUsed[date] = prev < 1 ? 1 : prev;
+    }
     await save();
   }
 
@@ -541,8 +685,8 @@ class Store extends ChangeNotifier {
     for (final item in data.rewards) {
       if (item.id == rewardId) reward = item;
     }
-    if (reward == null) return '找不到这个奖励';
-    if (reward.cost > balance) return '积分还不够';
+    if (reward == null) return l10n.errRewardNotFound;
+    if (reward.cost > balance) return l10n.errNotEnoughPts;
     data.redemptions.insert(
       0,
       Redemption(
@@ -600,9 +744,9 @@ class Store extends ChangeNotifier {
                 body: bytes,
               )
               .timeout(const Duration(seconds: 120));
-          if (res.statusCode == 401) throw Exception('口令不对');
+          if (res.statusCode == 401) throw Exception(l10n.errWrongPassphrase);
           if (res.statusCode >= 300) {
-            throw Exception('上传失败 ${res.statusCode}');
+            throw Exception(l10n.errUploadFail(res.statusCode));
           }
           uploaded.add(media.storedName);
         }
@@ -619,19 +763,12 @@ class Store extends ChangeNotifier {
             body: jsonEncode(data.toJson()),
           )
           .timeout(const Duration(seconds: 20));
-      if (res.statusCode == 401) throw Exception('请重新登录');
-      if (res.statusCode >= 300) throw Exception('同步失败 ${res.statusCode}');
+      if (res.statusCode == 401) throw Exception(l10n.errReLogin);
+      if (res.statusCode >= 300) throw Exception(l10n.errSyncFail(res.statusCode));
       lastSync = DateTime.now();
-      syncError = missing.isEmpty
-          ? null
-          : '进度已同步，但有 ${missing.length} 个附件没传到电脑。请用拍过照/录过音的那台手机再点「现在上传」';
+      syncError = missing.isEmpty ? null : l10n.syncPartialMedia(missing.length);
     } catch (e) {
-      final text = '$e';
-      syncError = text.contains('登录') || text.contains('口令')
-          ? text.contains('登录')
-              ? '登录已失效，请重新登录'
-              : '口令不对，设置里填 cami-home 后再保存'
-          : '还没连上同步电脑，检查地址和 cpolar';
+      syncError = _syncErrorMessage('$e');
     } finally {
       syncing = false;
       notifyListeners();
@@ -642,14 +779,14 @@ class Store extends ChangeNotifier {
     }
   }
 
-  Future<void> syncPull() async {
+  Future<void> syncPull({bool pushAfterMerge = false}) async {
     if (serverUrl.isEmpty) {
-      syncError = '先填写同步电脑地址并登录';
+      syncError = l10n.errNeedUrlLogin;
       notifyListeners();
       return;
     }
     if (!isLoggedIn) {
-      syncError = '请先用手机号登录';
+      syncError = l10n.errNeedPhoneLogin;
       notifyListeners();
       return;
     }
@@ -657,6 +794,7 @@ class Store extends ChangeNotifier {
     syncing = true;
     syncError = null;
     notifyListeners();
+    var shouldPush = pushAfterMerge;
     try {
       final res = await http
           .get(
@@ -664,37 +802,53 @@ class Store extends ChangeNotifier {
             headers: _authHeaders,
           )
           .timeout(const Duration(seconds: 20));
-      if (res.statusCode == 401) throw Exception('请重新登录');
+      if (res.statusCode == 401) throw Exception(l10n.errReLogin);
       if (res.statusCode == 404) {
+        // 云端还没有：把本地（含积分进度）上传上去
         lastSync = DateTime.now();
-        syncing = false;
-        notifyListeners();
-        return;
-      }
-      if (res.statusCode >= 300) throw Exception('读取失败 ${res.statusCode}');
-      final remote = AppData.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
-      if (remote.updatedAt.compareTo(data.updatedAt) >= 0) {
-        data = remote;
+        shouldPush = true;
+      } else if (res.statusCode >= 300) {
+        throw Exception(l10n.errReadFail(res.statusCode));
+      } else {
+        final remote = AppData.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+        // 始终合并，避免「时间戳较新的空本地」盖掉另一台手机的积分
+        data = mergeAppData(data, remote);
         await writeState(jsonEncode(data.toJson()));
         final keep = data.progress.expand((row) => row.media).map((m) => m.storedName).toSet();
         uploaded.removeWhere((name) => !keep.contains(name));
         final prefs = await SharedPreferences.getInstance();
         await prefs.setStringList(_uploadedKey, uploaded.toList());
         await pruneOrphanMedia(keep);
+        shouldPush = true;
       }
       lastSync = DateTime.now();
       syncError = null;
     } catch (e) {
-      final text = '$e';
-      syncError = text.contains('登录')
-          ? '登录已失效，请重新登录'
-          : text.contains('口令')
-              ? '口令不对，设置里填 cami-home 后再保存'
-              : '还没连上同步电脑，检查地址和 cpolar';
+      syncError = _syncErrorMessage('$e');
+      shouldPush = false;
     } finally {
       syncing = false;
       notifyListeners();
+      if (shouldPush) unawaited(syncPush());
     }
+  }
+
+  String _syncErrorMessage(String text) {
+    final lower = text.toLowerCase();
+    if (text.contains(l10n.errReLogin) ||
+        text.contains('请重新登录') ||
+        lower.contains('sign in again') ||
+        lower.contains('relogin')) {
+      return l10n.errSessionExpired;
+    }
+    if (text.contains(l10n.errWrongPassphrase) ||
+        text.contains(l10n.errBadToken) ||
+        text.contains('口令') ||
+        lower.contains('token') ||
+        lower.contains('passphrase')) {
+      return l10n.errTokenFix;
+    }
+    return l10n.errSyncOffline;
   }
 }
 
@@ -708,7 +862,7 @@ List<TaskTemplate> seedTasks() => [
       TaskTemplate(id: 'm3', subject: '数学', title: '每日一练', minutes: 20, points: 4),
       TaskTemplate(id: 'e1', subject: '英语', title: '英语打卡', minutes: 10, points: 4, englishSpecial: true),
       TaskTemplate(id: 'e2', subject: '英语', title: '每日3页阅读', minutes: 10, points: 3),
-      TaskTemplate(id: 'e3', subject: '英语', title: '背诵3个单词', minutes: 10, points: 3),
+      TaskTemplate(id: 'e3', subject: '英语', title: '背诵单词', minutes: 10, points: 3),
       TaskTemplate(id: 'e4', subject: '英语', title: '英语默写', minutes: 20, points: 4),
       TaskTemplate(id: 'o1', subject: '其他', title: '运动', minutes: 20, points: 3, note: '下去玩的时间'),
       TaskTemplate(id: 'o2', subject: '其他', title: '背古诗', minutes: 10, points: 3),

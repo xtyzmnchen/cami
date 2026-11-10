@@ -6,6 +6,7 @@ import '../store.dart';
 import '../task_day_view.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../l10n/l10n.dart';
 
 class CalendarPage extends StatefulWidget {
   const CalendarPage({super.key});
@@ -30,9 +31,9 @@ class _CalendarPageState extends State<CalendarPage> {
       initialDate: DateTime(_month.year, _month.month, _clampDay(_month.year, _month.month, _today.day)),
       firstDate: DateTime(2020, 1, 1),
       lastDate: DateTime(_today.year + 1, 12, 31),
-      helpText: '选择年月日',
-      cancelText: '取消',
-      confirmText: '查看',
+      helpText: context.l10n.pickDate,
+      cancelText: context.l10n.cancel,
+      confirmText: context.l10n.view,
       locale: const Locale('zh', 'CN'),
       builder: (context, child) {
         return Theme(
@@ -74,8 +75,8 @@ class _CalendarPageState extends State<CalendarPage> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
         RoseHeroBanner(
-          title: '${_month.year}年${_month.month}月',
-          subtitle: '本月 ${monthPoints(store.data, _month.year, _month.month)} 分 · 今年 ${yearPoints(store.data, _month.year)} 分',
+          title: context.l10n.monthYear(_month.year, _month.month),
+          subtitle: context.l10n.monthPointsLine(monthPoints(store.data, _month.year, _month.month), yearPoints(store.data, _month.year)),
           height: 120,
         ),
         const SizedBox(height: 12),
@@ -84,7 +85,7 @@ class _CalendarPageState extends State<CalendarPage> {
           child: Row(
             children: [
               IconButton(
-                tooltip: '上个月',
+                tooltip: context.l10n.previousMonth,
                 onPressed: () => _shiftMonth(-1),
                 icon: const Icon(Icons.chevron_left, color: CamiColors.roseDeep),
               ),
@@ -97,14 +98,14 @@ class _CalendarPageState extends State<CalendarPage> {
                     child: Column(
                       children: [
                         Text(
-                          '${_month.year}年${_month.month}月',
+                          context.l10n.monthYear(_month.year, _month.month),
                           textAlign: TextAlign.center,
                           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 2),
-                        const Text(
-                          '点这里选择年月日',
-                          style: TextStyle(fontSize: 12, color: CamiColors.muted),
+                        Text(
+                          context.l10n.tapPickDate,
+                          style: const TextStyle(fontSize: 12, color: CamiColors.muted),
                         ),
                       ],
                     ),
@@ -112,12 +113,12 @@ class _CalendarPageState extends State<CalendarPage> {
                 ),
               ),
               IconButton(
-                tooltip: '下个月',
+                tooltip: context.l10n.nextMonth,
                 onPressed: () => _shiftMonth(1),
                 icon: const Icon(Icons.chevron_right, color: CamiColors.roseDeep),
               ),
               IconButton(
-                tooltip: '选择日期',
+                tooltip: context.l10n.pickDate,
                 onPressed: _pickDate,
                 icon: const Icon(Icons.calendar_month_outlined, color: CamiColors.roseDeep),
               ),
@@ -125,13 +126,13 @@ class _CalendarPageState extends State<CalendarPage> {
           ),
         ),
         const SizedBox(height: 12),
-        const Row(
+        Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _Legend(CamiColors.green, '全完成'),
-            _Legend(CamiColors.amber, '一部分'),
-            _Legend(CamiColors.red, '没做'),
-            _Legend(Color(0xFFFFD0E0), '无任务'),
+            _Legend(CamiColors.green, context.l10n.legendAllDone),
+            _Legend(CamiColors.amber, context.l10n.legendPartial),
+            _Legend(CamiColors.red, context.l10n.legendNone),
+            _Legend(const Color(0xFFFFD0E0), context.l10n.legendNoTask),
           ],
         ),
         const SizedBox(height: 10),
@@ -144,7 +145,7 @@ class _CalendarPageState extends State<CalendarPage> {
             mainAxisSpacing: 2,
             crossAxisSpacing: 2,
             children: [
-              for (final name in ['一', '二', '三', '四', '五', '六', '日'])
+              for (final name in context.l10n.weekdayShort)
                 Center(child: Text(name, style: const TextStyle(color: CamiColors.muted, fontSize: 12))),
               for (var i = 0; i < lead; i++) const SizedBox.shrink(),
               for (var day = 1; day <= days; day++)
@@ -265,8 +266,8 @@ class _DaySheet extends StatelessWidget {
               decoration: BoxDecoration(color: CamiColors.line, borderRadius: BorderRadius.circular(99)),
             ),
           ),
-          Text('${day.year}年${day.month}月${day.day}日', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-          Text('当天 $points 分', style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
+          Text(context.l10n.fullDate(day), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+          Text(context.l10n.dayPointsLine(points), style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
           TaskDaySections(date: key),
         ],

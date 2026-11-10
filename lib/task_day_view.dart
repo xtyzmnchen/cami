@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'l10n/l10n.dart';
 import 'models.dart';
 import 'storage/files.dart';
 import 'store.dart';
@@ -44,17 +45,19 @@ class SubjectProgressHeader extends StatelessWidget {
       if (!store.done(date, t.id)) return sum;
       return sum + (store.progress(date, t.id)?.points ?? 0);
     });
+    final s = context.l10n;
+    final label = s.subject(subject);
     return Padding(
       padding: const EdgeInsets.fromLTRB(2, 12, 2, 8),
       child: Row(
         children: [
-          RoseAvatar(size: 36, label: subject.substring(0, 1), pale: true),
+          RoseAvatar(size: 36, label: label.substring(0, 1), pale: true),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(subject, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+            child: Text(label, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
           ),
           Text(
-            '$done/${tasks.length} · $points 分',
+            s.donePtsLine(done, tasks.length, points),
             style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700),
           ),
         ],
@@ -74,10 +77,10 @@ class TaskExpandTile extends StatelessWidget {
     final row = store.progress(date, task.id);
     final media = row?.media ?? const [];
     final done = store.done(date, task.id);
-    final points = done ? '${row?.points ?? 0} 分' : '未完成';
+    final points = done ? context.l10n.pts(row?.points ?? 0) : context.l10n.unfinished;
     final kindHint = media.isEmpty
-        ? (done ? '没有附件' : '还没开始')
-        : '${media.length} 个附件，点箭头查看';
+        ? (done ? context.l10n.noAttachments : context.l10n.notStartedShort)
+        : context.l10n.mediaTapHint(media.length);
 
     return GlassPanel(
       margin: const EdgeInsets.only(bottom: 10),
@@ -91,7 +94,7 @@ class TaskExpandTile extends StatelessWidget {
           leading: done
               ? Image.asset(CamiAssets.rosePale, width: 28, height: 28)
               : const Icon(Icons.circle_outlined, color: CamiColors.line),
-          title: Text(task.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          title: Text(context.l10n.taskTitle(task.id, task.title), style: const TextStyle(fontWeight: FontWeight.w700)),
           subtitle: Text(kindHint, style: const TextStyle(fontSize: 12, color: CamiColors.muted)),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -137,21 +140,21 @@ class _MediaPreview extends StatelessWidget {
   final String token;
   final String session;
 
-  String get _kindLabel =>
-      item.kind == 'photo' ? '照片' : item.kind == 'video' ? '视频' : '录音';
+  String _kindLabel(BuildContext context) =>
+      item.kind == 'photo' ? context.l10n.photo : item.kind == 'video' ? context.l10n.video : context.l10n.audio;
 
   Future<void> _confirmDelete(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('删除$_kindLabel？'),
-        content: Text(item.label.isEmpty ? '删掉后不能恢复。' : '删掉「${item.label}」后不能恢复。'),
+        title: Text(context.l10n.deleteKind(_kindLabel(context))),
+        content: Text(context.l10n.deleteCannotUndo(context.l10n.mediaLabel(item.label))),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(context.l10n.cancel)),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: CamiColors.red),
-            child: const Text('删除'),
+            child: Text(context.l10n.delete),
           ),
         ],
       ),
@@ -171,12 +174,12 @@ class _MediaPreview extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  item.label.isEmpty ? _kindLabel : item.label,
+                  item.label.isEmpty ? _kindLabel(context) : context.l10n.mediaLabel(item.label),
                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                 ),
               ),
               IconButton(
-                tooltip: '删除',
+                tooltip: context.l10n.delete,
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _confirmDelete(context),
                 icon: const Icon(Icons.delete_outline, color: CamiColors.red),

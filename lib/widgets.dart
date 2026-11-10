@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'l10n/l10n.dart';
 import 'logic.dart';
 import 'models.dart';
 import 'store.dart';
@@ -58,32 +59,34 @@ class GlassPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final panel = DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
-        boxShadow: [
-          BoxShadow(
-            color: CamiColors.rose.withValues(alpha: 0.16),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Padding(padding: padding, child: child),
-    );
-    if (onTap == null) {
-      return Padding(padding: margin, child: ClipRRect(borderRadius: BorderRadius.circular(22), child: panel));
-    }
+    final radius = BorderRadius.circular(22);
+    final content = Padding(padding: padding, child: child);
     return Padding(
       padding: margin,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(22),
-          child: ClipRRect(borderRadius: BorderRadius.circular(22), child: panel),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          boxShadow: [
+            BoxShadow(
+              color: CamiColors.rose.withValues(alpha: 0.16),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.white.withValues(alpha: 0.82),
+          borderRadius: radius,
+          clipBehavior: Clip.antiAlias,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
+            ),
+            child: onTap == null
+                ? content
+                : InkWell(onTap: onTap, borderRadius: radius, child: content),
+          ),
         ),
       ),
     );
@@ -395,6 +398,7 @@ class _PinDialogState extends State<_PinDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final filled = controller.text.length;
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -420,10 +424,10 @@ class _PinDialogState extends State<_PinDialog> {
                 child: Image.asset(CamiAssets.rosePale, width: 64, height: 64, fit: BoxFit.cover),
               ),
               const SizedBox(height: 14),
-              const Text('家长密码', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+              Text(s.tr('家长密码', 'Parent PIN'), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
               const SizedBox(height: 4),
               Text(
-                wrong ? '密码不对，再试一次' : '请输入四位数字',
+                wrong ? s.tr('密码不对，再试一次', 'Wrong PIN, try again') : s.pinNeedFour,
                 style: TextStyle(
                   color: wrong ? CamiColors.red : CamiColors.muted,
                   fontWeight: wrong ? FontWeight.w700 : FontWeight.w500,
@@ -492,7 +496,7 @@ class _PinDialogState extends State<_PinDialog> {
                         foregroundColor: CamiColors.muted,
                         minimumSize: const Size.fromHeight(46),
                       ),
-                      child: const Text('取消'),
+                      child: Text(context.l10n.cancel),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -504,7 +508,7 @@ class _PinDialogState extends State<_PinDialog> {
                         minimumSize: const Size.fromHeight(46),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      child: const Text('打开'),
+                      child: Text(context.l10n.open),
                     ),
                   ),
                 ],
@@ -521,10 +525,12 @@ void toast(BuildContext context, String text) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 }
 
-String taskMeta(TaskTemplate task) {
-  if (task.schoolOnly) return '在学校完成 · ${task.points} 分';
-  final bits = <String>['${task.minutes} 分钟', '${task.points} 分'];
+String taskMeta(TaskTemplate task, [AppL10n? l10n]) {
+  final s = l10n ?? AppL10n(const Locale('zh', 'CN'));
+  if (task.schoolOnly) return s.schoolOnlyMeta(task.points);
+  final bits = <String>[s.minutesPoints(task.minutes, task.points)];
   if (task.note.isNotEmpty) bits.add(task.note);
-  if (task.englishSpecial) bits.add('要录音');
+  if (task.englishSpecial) bits.add(s.needsRecording);
+  if (task.id == 'e3' || task.title.contains('单词')) bits.add(s.vocabTag);
   return bits.join(' · ');
 }

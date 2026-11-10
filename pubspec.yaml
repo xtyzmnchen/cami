@@ -55,6 +55,8 @@ dependencies:
   wakelock_plus: ^1.4.0
   crypto: ^3.0.8
   shared_preferences: ^2.5.3
+  mobile_scanner: ^7.5.0
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:
@@ -92,6 +94,7 @@ flutter:
   assets:
     - assets/images/
     - assets/icon/
+    - assets/games/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
