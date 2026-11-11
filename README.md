@@ -18,8 +18,9 @@
    [`web/sync-endpoint.json`](web/sync-endpoint.json)
 2. 手机 App 同步失败时，自动去 GitHub 拉这个文件并替换本地同步地址
 
-发现接口（固定不变）：
+发现接口（固定不变，App 会按顺序尝试）：
 
+- https://cdn.jsdelivr.net/gh/xtyzmnchen/cami@main/web/sync-endpoint.json（国内优先）
 - https://raw.githubusercontent.com/xtyzmnchen/cami/main/web/sync-endpoint.json
 - https://xtyzmnchen.github.io/cami/sync-endpoint.json（Pages 部署后可用）
 

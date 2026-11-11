@@ -46,7 +46,9 @@ class Store extends ChangeNotifier {
   final _uuid = const Uuid();
 
   /// 电脑端 cpolar 地址变更后写到 GitHub；手机同步失败时来这里拉最新地址。
+  /// jsDelivr 在国内更稳；raw / Pages 作备份。
   static const discoveryEndpoints = [
+    'https://cdn.jsdelivr.net/gh/xtyzmnchen/cami@main/web/sync-endpoint.json',
     'https://raw.githubusercontent.com/xtyzmnchen/cami/main/web/sync-endpoint.json',
     'https://xtyzmnchen.github.io/cami/sync-endpoint.json',
   ];

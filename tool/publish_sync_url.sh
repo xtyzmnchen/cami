@@ -39,5 +39,5 @@ fi
 git commit -m "Update sync endpoint to ${URL}"
 git push origin HEAD
 echo "已发布发现地址（手机可自动拉取）："
-echo "  https://raw.githubusercontent.com/xtyzmnchen/cami/main/web/sync-endpoint.json"
+echo "  https://cdn.jsdelivr.net/gh/xtyzmnchen/cami@main/web/sync-endpoint.json"
 echo "当前同步电脑：$URL"
