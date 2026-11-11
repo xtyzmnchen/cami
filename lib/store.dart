@@ -45,6 +45,12 @@ class Store extends ChangeNotifier {
   Timer? _syncTimer;
   final _uuid = const Uuid();
 
+  /// 电脑端 cpolar 地址变更后写到 GitHub；手机同步失败时来这里拉最新地址。
+  static const discoveryEndpoints = [
+    'https://raw.githubusercontent.com/xtyzmnchen/cami/main/web/sync-endpoint.json',
+    'https://xtyzmnchen.github.io/cami/sync-endpoint.json',
+  ];
+
   String get todayKey => dayKey(DateTime.now());
   bool get isLoggedIn => sessionId.isNotEmpty && phone.isNotEmpty;
 
@@ -300,6 +306,31 @@ class Store extends ChangeNotifier {
     await prefs.setString('cami_server_url', serverUrl);
     await prefs.setString('cami_server_token', serverToken);
     notifyListeners();
+  }
+
+  /// 从 GitHub 发现文件拉取最新同步地址。返回是否改写了本地配置。
+  Future<bool> refreshEndpointFromDiscovery() async {
+    for (final base in discoveryEndpoints) {
+      try {
+        final uri = Uri.parse('$base?t=${DateTime.now().millisecondsSinceEpoch}');
+        final res = await http.get(uri).timeout(const Duration(seconds: 10));
+        if (res.statusCode != 200) continue;
+        final decoded = jsonDecode(res.body);
+        if (decoded is! Map) continue;
+        final nextUrl = '${decoded['url'] ?? ''}'.trim().replaceAll(RegExp(r'/+$'), '');
+        final nextToken = '${decoded['token'] ?? ''}'.trim();
+        if (nextUrl.isEmpty) continue;
+        final check = Uri.tryParse(nextUrl);
+        if (check == null || !check.hasScheme || check.host.isEmpty) continue;
+        final token = nextToken.isEmpty ? serverToken : nextToken;
+        if (nextUrl == serverUrl && token == serverToken) return false;
+        await setServer(nextUrl, token);
+        return true;
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
   }
 
   Map<String, String> get _gateHeaders => {
@@ -708,7 +739,10 @@ class Store extends ChangeNotifier {
     _syncTimer = Timer(const Duration(seconds: 1), syncPush);
   }
 
-  Future<void> syncPush() async {
+  Future<void> syncPush({bool allowDiscover = true}) async {
+    if (serverUrl.isEmpty && allowDiscover) {
+      await refreshEndpointFromDiscovery();
+    }
     if (serverUrl.isEmpty || !isLoggedIn) return;
     if (syncing) {
       _pushAgain = true;
@@ -717,6 +751,7 @@ class Store extends ChangeNotifier {
     syncing = true;
     syncError = null;
     notifyListeners();
+    var retryDiscover = false;
     try {
       final missing = <String>[];
       for (final row in data.progress) {
@@ -769,17 +804,25 @@ class Store extends ChangeNotifier {
       syncError = missing.isEmpty ? null : l10n.syncPartialMedia(missing.length);
     } catch (e) {
       syncError = _syncErrorMessage('$e');
+      retryDiscover = allowDiscover && _looksLikeEndpointDown('$e');
     } finally {
       syncing = false;
       notifyListeners();
       if (_pushAgain) {
         _pushAgain = false;
-        unawaited(syncPush());
+        unawaited(syncPush(allowDiscover: allowDiscover));
       }
+    }
+    if (retryDiscover) {
+      final updated = await refreshEndpointFromDiscovery();
+      if (updated) await syncPush(allowDiscover: false);
     }
   }
 
-  Future<void> syncPull({bool pushAfterMerge = false}) async {
+  Future<void> syncPull({bool pushAfterMerge = false, bool allowDiscover = true}) async {
+    if (serverUrl.isEmpty && allowDiscover) {
+      await refreshEndpointFromDiscovery();
+    }
     if (serverUrl.isEmpty) {
       syncError = l10n.errNeedUrlLogin;
       notifyListeners();
@@ -795,6 +838,7 @@ class Store extends ChangeNotifier {
     syncError = null;
     notifyListeners();
     var shouldPush = pushAfterMerge;
+    var retryDiscover = false;
     try {
       final res = await http
           .get(
@@ -826,11 +870,33 @@ class Store extends ChangeNotifier {
     } catch (e) {
       syncError = _syncErrorMessage('$e');
       shouldPush = false;
+      retryDiscover = allowDiscover && _looksLikeEndpointDown('$e');
     } finally {
       syncing = false;
       notifyListeners();
       if (shouldPush) unawaited(syncPush());
     }
+    if (retryDiscover) {
+      final updated = await refreshEndpointFromDiscovery();
+      if (updated) await syncPull(pushAfterMerge: pushAfterMerge, allowDiscover: false);
+    }
+  }
+
+  bool _looksLikeEndpointDown(String text) {
+    final lower = text.toLowerCase();
+    if (lower.contains('socket') ||
+        lower.contains('failed host lookup') ||
+        lower.contains('connection') ||
+        lower.contains('timed out') ||
+        lower.contains('timeout') ||
+        lower.contains('network') ||
+        lower.contains('clientexception') ||
+        text.contains('离线') ||
+        text.contains(l10n.errSyncOffline)) {
+      return true;
+    }
+    final code = RegExp(r'\b([45]\d{2})\b').firstMatch(text)?.group(1);
+    return code == '502' || code == '503' || code == '504' || code == '404';
   }
 
   String _syncErrorMessage(String text) {

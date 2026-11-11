@@ -184,14 +184,21 @@ class AppL10n {
   String get saveName => isEn ? 'Save name' : '保存名字';
   String get syncComputer => isEn ? 'Sync PC' : '同步电脑';
   String get syncHint => isEn
-      ? 'Each phone number has its own data. Pull before reviewing.'
-      : '每个手机号的数据单独存放。批改前可点刷新拉取最新作业。';
+      ? 'Each phone number has its own data. If the PC tunnel URL changes, the app can auto-fetch the new one from GitHub.'
+      : '每个手机号的数据单独存放。电脑公网地址变了时，App 会从 GitHub 自动拉取新地址。';
   String get syncUrl => isEn ? 'Sync URL' : '同步地址';
   String get syncUrlHint => isEn ? 'e.g. https://xxxx.cpolar.cn' : '例如 https://xxxx.cpolar.cn';
   String get scanQr => isEn ? 'Scan QR' : '扫描二维码';
   String get syncToken => isEn ? 'Token (default cami-home)' : '口令（默认 cami-home）';
   String get saveUrl => isEn ? 'Save URL' : '保存地址';
   String get urlSaved => isEn ? 'URL saved' : '地址已保存';
+  String get refreshEndpoint => isEn ? 'Fetch latest sync URL' : '从云端刷新同步地址';
+  String endpointUpdated(String url) =>
+      isEn ? 'Sync URL updated · $url' : '同步地址已更新 · $url';
+  String get endpointUnchanged =>
+      isEn ? 'Already using the latest sync URL' : '已是最新同步地址';
+  String get endpointFetchFail =>
+      isEn ? 'Couldn’t fetch sync URL from GitHub' : '没拉到云端同步地址';
   String get showSyncQr => isEn ? 'Show sync QR' : '显示同步二维码';
   String get syncQrTitle => isEn ? 'Sync QR code' : '同步二维码';
   String get syncQrHint =>
@@ -304,6 +311,11 @@ class AppL10n {
   String get noRecordingYet => isEn ? 'No recording yet' : '还没有录音';
   String get listenRecording => isEn ? 'Play' : '听录音';
   String get share => isEn ? 'Share' : '分享';
+  String get preparingShare => isEn ? 'Preparing to share…' : '正在准备分享…';
+  String get shareUnavailable =>
+      isEn ? 'File not ready to share yet — sync first' : '还不能分享，请先同步上传';
+  String get shareFailed => isEn ? 'Share failed, try again' : '分享失败，再试一次';
+  String get tapToFullscreen => isEn ? 'Tap to view fullscreen' : '点按全屏查看';
   String get reRecord => isEn ? 'Re-record' : '重录';
   String get goRecord => isEn ? 'Record' : '去录';
   String englishType(String raw) {

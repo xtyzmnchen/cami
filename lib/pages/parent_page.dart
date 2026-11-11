@@ -6,8 +6,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../l10n/l10n.dart';
 import '../logic.dart';
+import '../media_viewer.dart';
 import '../models.dart';
-import '../storage/files.dart';
 import '../store.dart';
 import '../sync_qr.dart';
 import '../theme.dart';
@@ -299,31 +299,16 @@ class _GradeTaskPageState extends State<GradeTaskPage> {
             Text(context.l10n.noMediaYet, style: const TextStyle(color: CamiColors.muted))
           else
             for (final media in row.media) ...[
-              Text(
-                media.label.isEmpty
-                    ? (media.kind == 'photo'
-                        ? context.l10n.photo
-                        : media.kind == 'video'
-                            ? context.l10n.video
-                            : context.l10n.audio)
-                    : context.l10n.mediaLabel(media.label),
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              if (media.noteZh.isNotEmpty) Text(media.noteZh),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: SizedBox(
-                  height: 220,
-                  child: mediaView(
-                    kind: media.kind,
-                    path: media.path,
-                    filename: media.storedName,
-                    serverUrl: store.serverUrl,
-                    token: store.serverToken,
-                    session: store.sessionId,
-                  ),
-                ),
+              if (media.noteZh.isNotEmpty) ...[
+                Text(media.noteZh),
+                const SizedBox(height: 6),
+              ],
+              MediaPreviewCard(
+                item: media,
+                serverUrl: store.serverUrl,
+                token: store.serverToken,
+                session: store.sessionId,
+                height: 220,
               ),
               const SizedBox(height: 12),
             ],
@@ -774,6 +759,30 @@ class _ParentSettingsPageState extends State<ParentSettingsPage> {
             await store.setServer(url.text, token.text);
             if (context.mounted) toast(context, s.urlSaved);
           },
+        ),
+        const SizedBox(height: 8),
+        RoseButton(
+          label: s.refreshEndpoint,
+          filled: false,
+          onPressed: store.syncing
+              ? null
+              : () async {
+                  final before = store.serverUrl;
+                  final updated = await store.refreshEndpointFromDiscovery();
+                  if (!context.mounted) return;
+                  setState(() {
+                    url.text = store.serverUrl;
+                    token.text = store.serverToken;
+                  });
+                  if (!updated) {
+                    toast(context, store.serverUrl.isEmpty ? s.endpointFetchFail : s.endpointUnchanged);
+                    return;
+                  }
+                  toast(context, s.endpointUpdated(store.serverUrl));
+                  if (before != store.serverUrl && store.isLoggedIn) {
+                    await store.syncPull();
+                  }
+                },
         ),
         const SizedBox(height: 8),
         RoseButton(
