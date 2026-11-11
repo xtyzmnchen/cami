@@ -16,7 +16,8 @@ class AuthPage extends StatefulWidget {
   State<AuthPage> createState() => _AuthPageState();
 }
 
-class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin {
+class _AuthPageState extends State<AuthPage>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final server = TextEditingController();
   final token = TextEditingController(text: 'cami-home');
   final phone = TextEditingController();
@@ -29,6 +30,8 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
   var busy = false;
   var obscure = true;
   var showAdvanced = false;
+  var discovering = false;
+  String? endpointHint;
   String? error;
   String grade = '二年级';
   final interestChips = ['画画', '阅读', '运动', '音乐', '乐高', '英语'];
@@ -39,15 +42,71 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final store = context.read<Store>();
     server.text = store.serverUrl;
-    token.text = store.serverToken;
+    token.text = store.serverToken.isEmpty ? 'cami-home' : store.serverToken;
     showAdvanced = store.serverUrl.isEmpty;
+    if (store.serverUrl.isNotEmpty) {
+      endpointHint = null; // 先显示本地缓存，后台再刷新
+    }
     _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..repeat(reverse: true);
+    // 等首帧后再拉，避开启动期系统弹窗抢焦点
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 400), () {
+        if (mounted) _autoFillEndpoint();
+      });
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    // 用户关掉通知/网络权限弹窗回到前台后，若还没地址就自动再拉
+    if (step == 0 && server.text.trim().isEmpty && !discovering) {
+      _autoFillEndpoint();
+    }
+  }
+
+  Future<void> _autoFillEndpoint() async {
+    if (!mounted || discovering) return;
+    setState(() {
+      discovering = true;
+      endpointHint = context.l10n.fetchingEndpoint;
+    });
+    final store = context.read<Store>();
+    var ok = false;
+    // 冷启动/弹窗期间网络可能瞬时失败，自动重试几次
+    for (var i = 0; i < 4; i++) {
+      try {
+        await store.refreshEndpointFromDiscovery();
+      } catch (_) {}
+      if (!mounted) return;
+      if (store.serverUrl.isNotEmpty) {
+        ok = true;
+        break;
+      }
+      await Future<void>.delayed(Duration(milliseconds: 700 * (i + 1)));
+      if (!mounted) return;
+    }
+    if (!mounted) return;
+    setState(() {
+      discovering = false;
+      if (ok || store.serverUrl.isNotEmpty) {
+        server.text = store.serverUrl;
+        token.text = store.serverToken.isEmpty ? 'cami-home' : store.serverToken;
+        showAdvanced = false;
+        endpointHint = context.l10n.endpointFilled(store.serverUrl);
+      } else {
+        showAdvanced = true;
+        endpointHint = context.l10n.endpointFetchFail;
+      }
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pulse.dispose();
     server.dispose();
     token.dispose();
@@ -273,13 +332,39 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
                       ),
                     ),
                   ),
+                  if (discovering)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 8),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  else
+                    IconButton(
+                      tooltip: context.l10n.refreshEndpoint,
+                      onPressed: busy ? null : _autoFillEndpoint,
+                      icon: const Icon(Icons.cloud_download_outlined, color: CamiColors.roseDeep),
+                    ),
                   TextButton.icon(
-                    onPressed: busy ? null : _scanServer,
+                    onPressed: busy || discovering ? null : _scanServer,
                     icon: const Icon(Icons.qr_code_scanner, color: CamiColors.roseDeep),
                     label: Text(context.l10n.scanFillUrl, style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700)),
                   ),
                 ],
               ),
+              if (endpointHint != null) ...[
+                Text(
+                  endpointHint!,
+                  style: TextStyle(
+                    color: endpointHint == context.l10n.endpointFetchFail ? CamiColors.red : CamiColors.roseDeep,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
               AnimatedCrossFade(
                 firstChild: const SizedBox.shrink(),
                 secondChild: Column(
@@ -314,7 +399,12 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
           ),
         ),
         const SizedBox(height: 16),
-        RoseButton(label: busy ? context.l10n.checking : context.l10n.nextStep, onPressed: busy ? null : _next),
+        RoseButton(
+          label: discovering
+              ? context.l10n.fetchingEndpoint
+              : (busy ? context.l10n.checking : context.l10n.nextStep),
+          onPressed: busy || discovering ? null : _next,
+        ),
       ],
     );
   }

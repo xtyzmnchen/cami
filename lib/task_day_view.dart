@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'l10n/l10n.dart';
+import 'media_viewer.dart';
 import 'models.dart';
-import 'storage/files.dart';
 import 'store.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -167,44 +167,17 @@ class _MediaPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  item.label.isEmpty ? _kindLabel(context) : context.l10n.mediaLabel(item.label),
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-              ),
-              IconButton(
-                tooltip: context.l10n.delete,
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _confirmDelete(context),
-                icon: const Icon(Icons.delete_outline, color: CamiColors.red),
-              ),
-            ],
-          ),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: ColoredBox(
-              color: CamiColors.blush,
-              child: SizedBox(
-                width: double.infinity,
-                height: item.kind == 'audio' ? 96 : 180,
-                child: mediaView(
-                  kind: item.kind,
-                  path: item.path,
-                  filename: item.storedName,
-                  serverUrl: serverUrl,
-                  token: token,
-                  session: session,
-                ),
-              ),
-            ),
-          ),
-        ],
+      child: MediaPreviewCard(
+        item: item,
+        serverUrl: serverUrl,
+        token: token,
+        session: session,
+        trailing: IconButton(
+          tooltip: context.l10n.delete,
+          visualDensity: VisualDensity.compact,
+          onPressed: () => _confirmDelete(context),
+          icon: const Icon(Icons.delete_outline, color: CamiColors.red),
+        ),
       ),
     );
   }

@@ -199,6 +199,9 @@ class AppL10n {
       isEn ? 'Already using the latest sync URL' : '已是最新同步地址';
   String get endpointFetchFail =>
       isEn ? 'Couldn’t fetch sync URL from GitHub' : '没拉到云端同步地址';
+  String get fetchingEndpoint => isEn ? 'Fetching sync URL…' : '正在获取同步地址…';
+  String endpointFilled(String url) =>
+      isEn ? 'Sync URL ready · $url' : '同步地址已填好 · $url';
   String get showSyncQr => isEn ? 'Show sync QR' : '显示同步二维码';
   String get syncQrTitle => isEn ? 'Sync QR code' : '同步二维码';
   String get syncQrHint =>

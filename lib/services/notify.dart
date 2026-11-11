@@ -6,6 +6,7 @@ import 'package:timezone/timezone.dart' as tz;
 class Alerts {
   static final plugin = FlutterLocalNotificationsPlugin();
   static var ready = false;
+  static var _permissionAsked = false;
 
   static Future<void> init() async {
     if (kIsWeb || ready) return;
@@ -14,13 +15,31 @@ class Alerts {
       try {
         tz.setLocalLocation(tz.getLocation('Asia/Shanghai'));
       } catch (_) {}
+      // 启动时不弹通知权限，避免挡住登录页自动拉同步地址。
       await plugin.initialize(
         settings: const InitializationSettings(
           android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-          iOS: DarwinInitializationSettings(),
+          iOS: DarwinInitializationSettings(
+            requestAlertPermission: false,
+            requestBadgePermission: false,
+            requestSoundPermission: false,
+          ),
         ),
       );
       ready = true;
+    } catch (_) {}
+  }
+
+  static Future<void> _ensurePermission() async {
+    if (!ready || _permissionAsked || kIsWeb) return;
+    _permissionAsked = true;
+    try {
+      await plugin
+          .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+          ?.requestPermissions(alert: true, badge: true, sound: true);
+      await plugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
     } catch (_) {}
   }
 
@@ -31,6 +50,7 @@ class Alerts {
     required String body,
   }) async {
     if (!ready || !when.isAfter(DateTime.now())) return;
+    await _ensurePermission();
     try {
       await plugin.zonedSchedule(
         id: id,

@@ -2,22 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/l10n.dart';
 import '../logic.dart';
+import '../media_viewer.dart';
 import '../models.dart';
 import '../services/capture.dart';
 import '../services/translate.dart';
 import '../services/voice.dart';
-import '../storage/files.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import '../vocab/schedule.dart';
 import 'task_page.dart';
 import 'vocab_page.dart';
-import '../vocab/schedule.dart';
 
 class EnglishPage extends StatelessWidget {
   const EnglishPage({super.key});
@@ -123,16 +122,24 @@ class EnglishPage extends StatelessWidget {
                       IconButton(
                         tooltip: context.l10n.listenRecording,
                         icon: const Icon(Icons.play_circle_outline, color: CamiColors.roseDeep),
-                        onPressed: () => _play(context, store, mine.first),
+                        onPressed: () => openMediaViewer(
+                          context,
+                          item: mine.first,
+                          serverUrl: store.serverUrl,
+                          token: store.serverToken,
+                          session: store.sessionId,
+                        ),
                       ),
                       IconButton(
                         tooltip: context.l10n.share,
-                        icon: const Icon(Icons.share),
-                        onPressed: () {
-                          final path = mine.first.path;
-                          if (path.isEmpty) return;
-                          SharePlus.instance.share(ShareParams(files: [XFile(path)], text: mine.first.label));
-                        },
+                        icon: const Icon(Icons.ios_share_rounded),
+                        onPressed: () => shareMediaItem(
+                          context,
+                          mine.first,
+                          serverUrl: store.serverUrl,
+                          token: store.serverToken,
+                          session: store.sessionId,
+                        ),
                       ),
                       if (!locked)
                         TextButton(
@@ -153,48 +160,17 @@ class EnglishPage extends StatelessWidget {
           if (done)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: ColoredBox(
-                  color: CamiColors.blush,
-                  child: SizedBox(
-                    height: 96,
-                    width: double.infinity,
-                    child: mediaView(
-                      kind: mine.first.kind,
-                      path: mine.first.path,
-                      filename: mine.first.storedName,
-                      serverUrl: store.serverUrl,
-                      token: store.serverToken,
-                      session: store.sessionId,
-                    ),
-                  ),
-                ),
+              child: MediaPreviewCard(
+                item: mine.first,
+                serverUrl: store.serverUrl,
+                token: store.serverToken,
+                session: store.sessionId,
+                height: 120,
+                showShare: false,
+                showTitle: false,
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  void _play(BuildContext context, Store store, MediaItem item) {
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: SizedBox(
-            height: 96,
-            child: mediaView(
-              kind: item.kind,
-              path: item.path,
-              filename: item.storedName,
-              serverUrl: store.serverUrl,
-              token: store.serverToken,
-              session: store.sessionId,
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -410,24 +386,12 @@ class _RecordPageState extends State<RecordPage> {
                 borderRadius: BorderRadius.circular(22),
                 border: Border.all(color: CamiColors.line),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(context.l10n.mediaLabel(_saved!.label), style: const TextStyle(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 96,
-                    width: double.infinity,
-                    child: mediaView(
-                      kind: _saved!.kind,
-                      path: _saved!.path,
-                      filename: _saved!.storedName,
-                      serverUrl: store.serverUrl,
-                      token: store.serverToken,
-                      session: store.sessionId,
-                    ),
-                  ),
-                ],
+              child: MediaPreviewCard(
+                item: _saved!,
+                serverUrl: store.serverUrl,
+                token: store.serverToken,
+                session: store.sessionId,
+                height: 120,
               ),
             ),
             const SizedBox(height: 12),

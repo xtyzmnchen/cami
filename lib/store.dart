@@ -46,12 +46,9 @@ class Store extends ChangeNotifier {
   final _uuid = const Uuid();
 
   /// 电脑端 cpolar 地址变更后写到 GitHub；手机同步失败时来这里拉最新地址。
-  /// jsDelivr 在国内更稳；raw / Pages 作备份。
-  static const discoveryEndpoints = [
-    'https://cdn.jsdelivr.net/gh/xtyzmnchen/cami@main/web/sync-endpoint.json',
-    'https://raw.githubusercontent.com/xtyzmnchen/cami/main/web/sync-endpoint.json',
-    'https://xtyzmnchen.github.io/cami/sync-endpoint.json',
-  ];
+  /// 注意：jsDelivr 的 `@main` 有 CDN 缓存，不能当准实时源；App 优先走 GitHub API。
+  static const discoveryRepo = 'xtyzmnchen/cami';
+  static const discoveryPath = 'web/sync-endpoint.json';
 
   String get todayKey => dayKey(DateTime.now());
   bool get isLoggedIn => sessionId.isNotEmpty && phone.isNotEmpty;
@@ -94,9 +91,15 @@ class Store extends ChangeNotifier {
     } catch (_) {}
     await _repairEnglishCheckIn();
     notifyListeners();
+    // 未登录时由登录页负责发现地址，避免和 AuthPage 并发抢跑。
     // 启动后立刻拉云端并合并，避免两台设备积分/进度不一致
     if (isLoggedIn && serverUrl.isNotEmpty) {
       unawaited(syncPull(pushAfterMerge: true));
+    } else if (isLoggedIn && serverUrl.isEmpty) {
+      unawaited(() async {
+        await refreshEndpointFromDiscovery();
+        if (serverUrl.isNotEmpty) await syncPull(pushAfterMerge: true);
+      }());
     }
   }
 
@@ -312,27 +315,98 @@ class Store extends ChangeNotifier {
 
   /// 从 GitHub 发现文件拉取最新同步地址。返回是否改写了本地配置。
   Future<bool> refreshEndpointFromDiscovery() async {
-    for (final base in discoveryEndpoints) {
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final candidates = <Future<String?> Function()>[
+      // 1) GitHub Contents API 原始正文（无 CDN 缓存，最及时）
+      () => _httpGetBody(
+            'https://api.github.com/repos/$discoveryRepo/contents/$discoveryPath?ref=main&_=$stamp',
+            headers: const {
+              'Accept': 'application/vnd.github.raw+json',
+              'User-Agent': 'cami-app',
+            },
+          ),
+      // 2) 先取该文件最新 commit，再走 jsDelivr@sha（国内快且按 commit 无陈旧缓存）
+      () async {
+        final sha = await _latestEndpointCommitSha();
+        if (sha == null || sha.isEmpty) return null;
+        return _httpGetBody(
+          'https://cdn.jsdelivr.net/gh/$discoveryRepo@$sha/$discoveryPath',
+        );
+      },
+      // 3) raw.githubusercontent（带防缓存参数）
+      () => _httpGetBody(
+            'https://raw.githubusercontent.com/$discoveryRepo/main/$discoveryPath?_=$stamp',
+            headers: const {'User-Agent': 'cami-app', 'Cache-Control': 'no-cache'},
+          ),
+      // 4) GitHub Pages
+      () => _httpGetBody(
+            'https://xtyzmnchen.github.io/cami/sync-endpoint.json?_=$stamp',
+          ),
+      // 5) jsDelivr @main（最后兜底，可能有延迟）
+      () => _httpGetBody(
+            'https://cdn.jsdelivr.net/gh/$discoveryRepo@main/$discoveryPath?_=$stamp',
+          ),
+    ];
+
+    for (final fetch in candidates) {
       try {
-        final uri = Uri.parse('$base?t=${DateTime.now().millisecondsSinceEpoch}');
-        final res = await http.get(uri).timeout(const Duration(seconds: 10));
-        if (res.statusCode != 200) continue;
-        final decoded = jsonDecode(res.body);
-        if (decoded is! Map) continue;
-        final nextUrl = '${decoded['url'] ?? ''}'.trim().replaceAll(RegExp(r'/+$'), '');
-        final nextToken = '${decoded['token'] ?? ''}'.trim();
-        if (nextUrl.isEmpty) continue;
-        final check = Uri.tryParse(nextUrl);
-        if (check == null || !check.hasScheme || check.host.isEmpty) continue;
-        final token = nextToken.isEmpty ? serverToken : nextToken;
-        if (nextUrl == serverUrl && token == serverToken) return false;
-        await setServer(nextUrl, token);
-        return true;
+        final body = await fetch();
+        if (body == null || body.trim().isEmpty) continue;
+        final applied = await _applyDiscoveryJson(body);
+        if (applied != null) return applied;
       } catch (_) {
         continue;
       }
     }
     return false;
+  }
+
+  Future<String?> _httpGetBody(String url, {Map<String, String>? headers}) async {
+    final res = await http
+        .get(Uri.parse(url), headers: headers)
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) return null;
+    return res.body;
+  }
+
+  Future<String?> _latestEndpointCommitSha() async {
+    try {
+      final res = await http
+          .get(
+            Uri.parse(
+              'https://api.github.com/repos/$discoveryRepo/commits'
+              '?path=$discoveryPath&per_page=1',
+            ),
+            headers: const {
+              'Accept': 'application/vnd.github+json',
+              'User-Agent': 'cami-app',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return null;
+      final list = jsonDecode(res.body);
+      if (list is! List || list.isEmpty) return null;
+      final first = list.first;
+      if (first is! Map) return null;
+      return '${first['sha'] ?? ''}';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 解析发现 JSON；成功应用时返回是否发生了变更（true/false），解析失败返回 null。
+  Future<bool?> _applyDiscoveryJson(String body) async {
+    final decoded = jsonDecode(body);
+    if (decoded is! Map) return null;
+    final nextUrl = '${decoded['url'] ?? ''}'.trim().replaceAll(RegExp(r'/+$'), '');
+    final nextToken = '${decoded['token'] ?? ''}'.trim();
+    if (nextUrl.isEmpty) return null;
+    final check = Uri.tryParse(nextUrl);
+    if (check == null || !check.hasScheme || check.host.isEmpty) return null;
+    final token = nextToken.isEmpty ? serverToken : nextToken;
+    if (nextUrl == serverUrl && token == serverToken) return false;
+    await setServer(nextUrl, token);
+    return true;
   }
 
   Map<String, String> get _gateHeaders => {

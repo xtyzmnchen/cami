@@ -86,6 +86,7 @@ Widget mediaView({
   String? serverUrl,
   String? token,
   String? session,
+  BoxFit fit = BoxFit.cover,
 }) {
   final local = path.isNotEmpty && File(path).existsSync();
   var remote = (serverUrl ?? '').isNotEmpty
@@ -95,12 +96,12 @@ Widget mediaView({
     remote = '$remote&session=${Uri.encodeQueryComponent(session!)}';
   }
   if (kind == 'photo') {
-    if (local) return Image.file(File(path), fit: BoxFit.cover);
-    if (remote != null) return Image.network(remote, fit: BoxFit.cover);
+    if (local) return Image.file(File(path), fit: fit);
+    if (remote != null) return Image.network(remote, fit: fit);
   }
   if (kind == 'video') {
-    if (local) return _Video(filePath: path);
-    if (remote != null) return _Video(url: remote);
+    if (local) return _Video(filePath: path, fit: fit);
+    if (remote != null) return _Video(url: remote, fit: fit);
   }
   if (kind == 'audio') {
     if (local) return _Audio(filePath: path);
@@ -113,9 +114,10 @@ Widget mediaView({
 }
 
 class _Video extends StatefulWidget {
-  const _Video({this.filePath, this.url});
+  const _Video({this.filePath, this.url, this.fit = BoxFit.cover});
   final String? filePath;
   final String? url;
+  final BoxFit fit;
 
   @override
   State<_Video> createState() => _VideoState();
@@ -131,6 +133,9 @@ class _VideoState extends State<_Video> {
     _controller = widget.filePath != null
         ? VideoPlayerController.file(File(widget.filePath!))
         : VideoPlayerController.networkUrl(Uri.parse(widget.url!));
+    _controller.addListener(() {
+      if (mounted) setState(() {});
+    });
     _controller.initialize().then((_) {
       if (mounted) setState(() => _ready = true);
     });
@@ -145,12 +150,45 @@ class _VideoState extends State<_Video> {
   @override
   Widget build(BuildContext context) {
     if (!_ready) return const Center(child: CircularProgressIndicator());
-    return GestureDetector(
-      onTap: () => _controller.value.isPlaying ? _controller.pause() : _controller.play(),
-      child: AspectRatio(
-        aspectRatio: _controller.value.aspectRatio,
-        child: VideoPlayer(_controller),
+    final playing = _controller.value.isPlaying;
+    final ratio = _controller.value.aspectRatio == 0 ? 16 / 9 : _controller.value.aspectRatio;
+    final video = AspectRatio(
+      aspectRatio: ratio,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          VideoPlayer(_controller),
+          if (!playing)
+            Container(
+              decoration: const BoxDecoration(
+                color: Color(0x66000000),
+                shape: BoxShape.circle,
+              ),
+              padding: const EdgeInsets.all(12),
+              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 36),
+            ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: VideoProgressIndicator(
+              _controller,
+              allowScrubbing: true,
+              colors: const VideoProgressColors(
+                playedColor: CamiColors.roseDeep,
+                bufferedColor: Colors.white54,
+                backgroundColor: Colors.white24,
+              ),
+            ),
+          ),
+        ],
       ),
+    );
+    return GestureDetector(
+      onTap: () => playing ? _controller.pause() : _controller.play(),
+      child: widget.fit == BoxFit.contain
+          ? Center(child: video)
+          : FittedBox(fit: widget.fit, clipBehavior: Clip.hardEdge, child: video),
     );
   }
 }

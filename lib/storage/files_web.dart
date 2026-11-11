@@ -62,6 +62,7 @@ Widget mediaView({
   String? serverUrl,
   String? token,
   String? session,
+  BoxFit fit = BoxFit.cover,
 }) {
   final bytes = memoryMedia[filename] ?? memoryMedia[path] ??
       (activeAccountPhone.isEmpty ? null : memoryMedia['$activeAccountPhone/$filename']);
@@ -71,11 +72,11 @@ Widget mediaView({
   }
 
   if (kind == 'photo') {
-    if (bytes != null) return Image.memory(bytes, fit: BoxFit.cover);
+    if (bytes != null) return Image.memory(bytes, fit: fit);
     if (remote != null) {
       return Image.network(
         remote,
-        fit: BoxFit.cover,
+        fit: fit,
         headers: {
           if ((token ?? '').isNotEmpty) 'x-cami-token': token!,
           if ((session ?? '').isNotEmpty) 'x-cami-session': session!,
@@ -89,7 +90,7 @@ Widget mediaView({
     }
   }
   if (kind == 'video') {
-    if (remote != null) return _WebVideo(url: remote);
+    if (remote != null) return _WebVideo(url: remote, fit: fit);
     if (bytes != null) {
       return const Center(child: Text('视频已在本机缓存', style: TextStyle(color: CamiColors.muted)));
     }
@@ -126,8 +127,9 @@ class _MissingMedia extends StatelessWidget {
 }
 
 class _WebVideo extends StatefulWidget {
-  const _WebVideo({required this.url});
+  const _WebVideo({required this.url, this.fit = BoxFit.cover});
   final String url;
+  final BoxFit fit;
 
   @override
   State<_WebVideo> createState() => _WebVideoState();
@@ -143,6 +145,9 @@ class _WebVideoState extends State<_WebVideo> {
     super.initState();
     final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
     _controller = c;
+    c.addListener(() {
+      if (mounted) setState(() {});
+    });
     c.initialize().then((_) {
       if (!mounted) return;
       setState(() => _ready = true);
@@ -162,12 +167,45 @@ class _WebVideoState extends State<_WebVideo> {
   Widget build(BuildContext context) {
     if (_failed) return const _MissingMedia(kind: '视频');
     if (!_ready || _controller == null) return const Center(child: CircularProgressIndicator());
-    return GestureDetector(
-      onTap: () => _controller!.value.isPlaying ? _controller!.pause() : _controller!.play(),
-      child: AspectRatio(
-        aspectRatio: _controller!.value.aspectRatio == 0 ? 16 / 9 : _controller!.value.aspectRatio,
-        child: VideoPlayer(_controller!),
+    final playing = _controller!.value.isPlaying;
+    final ratio = _controller!.value.aspectRatio == 0 ? 16 / 9 : _controller!.value.aspectRatio;
+    final video = AspectRatio(
+      aspectRatio: ratio,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          VideoPlayer(_controller!),
+          if (!playing)
+            Container(
+              decoration: const BoxDecoration(
+                color: Color(0x66000000),
+                shape: BoxShape.circle,
+              ),
+              padding: const EdgeInsets.all(12),
+              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 36),
+            ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: VideoProgressIndicator(
+              _controller!,
+              allowScrubbing: true,
+              colors: const VideoProgressColors(
+                playedColor: CamiColors.roseDeep,
+                bufferedColor: Colors.white54,
+                backgroundColor: Colors.white24,
+              ),
+            ),
+          ),
+        ],
       ),
+    );
+    return GestureDetector(
+      onTap: () => playing ? _controller!.pause() : _controller!.play(),
+      child: widget.fit == BoxFit.contain
+          ? Center(child: video)
+          : FittedBox(fit: widget.fit, clipBehavior: Clip.hardEdge, child: video),
     );
   }
 }

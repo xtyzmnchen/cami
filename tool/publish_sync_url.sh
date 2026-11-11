@@ -38,6 +38,34 @@ fi
 
 git commit -m "Update sync endpoint to ${URL}"
 git push origin HEAD
-echo "已发布发现地址（手机可自动拉取）："
-echo "  https://cdn.jsdelivr.net/gh/xtyzmnchen/cami@main/web/sync-endpoint.json"
+SHA="$(git rev-parse HEAD)"
+
+purge_jsdelivr() {
+  local path="$1"
+  curl -fsS --connect-timeout 8 --max-time 15 "https://purge.jsdelivr.net/${path}" >/dev/null 2>&1 || true
+}
+
+# @main 有缓存；同时 purge @main 与精确 commit，方便国内 CDN 回源
+purge_jsdelivr "gh/xtyzmnchen/cami@main/web/sync-endpoint.json"
+purge_jsdelivr "gh/xtyzmnchen/cami@${SHA}/web/sync-endpoint.json"
+# 再清一次 fastly 入口
+curl -fsS --connect-timeout 8 --max-time 15 \
+  -X PURGE "https://cdn.jsdelivr.net/gh/xtyzmnchen/cami@main/web/sync-endpoint.json" >/dev/null 2>&1 || true
+
+echo "已发布（GitHub 为准，即时生效）："
+echo "  API: https://api.github.com/repos/xtyzmnchen/cami/contents/web/sync-endpoint.json?ref=main"
+echo "  jsDelivr@commit: https://cdn.jsdelivr.net/gh/xtyzmnchen/cami@${SHA}/web/sync-endpoint.json"
+echo "  （不要依赖 jsDelivr @main，它可能延迟几分钟）"
 echo "当前同步电脑：$URL"
+
+# 校验 GitHub API 是否已是新地址（App 也优先读这个）
+API_URL="$(curl -fsS --connect-timeout 8 --max-time 15 \
+  -H 'Accept: application/vnd.github.raw+json' \
+  -H 'User-Agent: cami-publish' \
+  "https://api.github.com/repos/xtyzmnchen/cami/contents/web/sync-endpoint.json?ref=main" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("url",""))' 2>/dev/null || true)"
+if [[ -n "$API_URL" && "$API_URL" == "$URL" ]]; then
+  echo "GitHub API 校验通过: $API_URL"
+else
+  echo "GitHub API 校验: ${API_URL:-空}（若为空请稍后重试；App 会优先读 API）"
+fi

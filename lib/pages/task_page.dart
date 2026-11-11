@@ -3,18 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../l10n/l10n.dart';
+import '../media_viewer.dart';
 import '../models.dart';
 import '../services/capture.dart';
 import '../services/notify.dart';
 import '../services/voice.dart';
-import '../storage/files.dart';
 import '../store.dart';
 import '../theme.dart';
 import '../widgets.dart';
-import '../l10n/l10n.dart';
 
 class TaskPage extends StatefulWidget {
   const TaskPage({super.key, required this.task});
@@ -524,36 +523,27 @@ Widget _mediaTile(BuildContext context, Store store, MediaItem item) {
         item.kind == 'photo'
             ? context.l10n.photo
             : item.kind == 'video'
-            ? context.l10n.video
-            : context.l10n.audio,
+                ? context.l10n.video
+                : context.l10n.audio,
       ),
       trailing: IconButton(
-        icon: const Icon(Icons.share),
-        onPressed: () {
-          if (item.path.isEmpty) return;
-          SharePlus.instance.share(
-            ShareParams(files: [XFile(item.path)], text: item.label),
-          );
-        },
+        tooltip: context.l10n.share,
+        icon: const Icon(Icons.ios_share_rounded),
+        onPressed: () => shareMediaItem(
+          context,
+          item,
+          serverUrl: store.serverUrl,
+          token: store.serverToken,
+          session: store.sessionId,
+        ),
       ),
-      onTap: () {
-        showDialog(
-          context: context,
-          builder: (_) => Dialog(
-            child: SizedBox(
-              height: 280,
-              child: mediaView(
-                kind: item.kind,
-                path: item.path,
-                filename: item.storedName,
-                serverUrl: store.serverUrl,
-                token: store.serverToken,
-                session: store.sessionId,
-              ),
-            ),
-          ),
-        );
-      },
+      onTap: () => openMediaViewer(
+        context,
+        item: item,
+        serverUrl: store.serverUrl,
+        token: store.serverToken,
+        session: store.sessionId,
+      ),
     ),
   );
 }
