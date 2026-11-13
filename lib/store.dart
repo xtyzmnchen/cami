@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import 'l10n/l10n.dart';
 import 'logic.dart';
 import 'models.dart';
+import 'services/app_label.dart';
 import 'storage/files.dart';
 import 'poems/poems.dart';
 import 'vocab/schedule.dart';
@@ -38,12 +39,17 @@ class Store extends ChangeNotifier {
   DateTime? lastSync;
   bool syncing = false;
   bool parentMode = false;
-  /// 'zh' | 'en' — 家长设置里切换，本机持久化。
-  String localeCode = 'zh';
+  /// 'zh' | 'en' — 家长设置里切换，本机持久化。默认英文。
+  String localeCode = 'en';
   bool _pushAgain = false;
   final uploaded = <String>{};
   Timer? _syncTimer;
   final _uuid = const Uuid();
+
+  /// 应急最高权限账号：服务器挂了也能进；能连上则优先走服务器。
+  static const masterPhone = '13800000000';
+  static const masterPassword = '123456';
+  static const _masterLocalSession = 'local-master';
 
   /// 电脑端 cpolar 地址变更后写到 GitHub；手机同步失败时来这里拉最新地址。
   /// 注意：jsDelivr 的 `@main` 有 CDN 缓存，不能当准实时源；App 优先走 GitHub API。
@@ -52,6 +58,20 @@ class Store extends ChangeNotifier {
 
   String get todayKey => dayKey(DateTime.now());
   bool get isLoggedIn => sessionId.isNotEmpty && phone.isNotEmpty;
+
+  bool get isMasterUser => phone == masterPhone;
+
+  /// 本地应急会话（未连上服务器时）。
+  bool get isOfflineMaster => isMasterUser && sessionId == _masterLocalSession;
+
+  static bool isMasterPhone(String raw) =>
+      RegExp(r'^1\d{10}$').hasMatch(raw.replaceAll(RegExp(r'\D'), '')) &&
+      raw.replaceAll(RegExp(r'\D'), '') == masterPhone;
+
+  static bool isMasterCreds(String rawPhone, String password) {
+    final phoneNo = rawPhone.replaceAll(RegExp(r'\D'), '');
+    return phoneNo == masterPhone && password == masterPassword;
+  }
 
   AppData _freshData({String childName = 'Cami'}) => AppData(
         pinHash: pinHashOf('2580'),
@@ -71,7 +91,8 @@ class Store extends ChangeNotifier {
     sessionId = prefs.getString('cami_session') ?? '';
     phone = prefs.getString('cami_phone') ?? '';
     parentMode = prefs.getBool('cami_parent_mode') == true;
-    localeCode = prefs.getString('cami_locale') == 'en' ? 'en' : 'zh';
+    // 未设置或非中文时默认英文
+    localeCode = prefs.getString('cami_locale') == 'zh' ? 'zh' : 'en';
     final profileRaw = prefs.getString('cami_profile');
     if (profileRaw != null && profileRaw.isNotEmpty) {
       try {
@@ -91,6 +112,7 @@ class Store extends ChangeNotifier {
     } catch (_) {}
     await _repairEnglishCheckIn();
     notifyListeners();
+    unawaited(AppLabel.apply(localeCode));
     // 未登录时由登录页负责发现地址，避免和 AuthPage 并发抢跑。
     // 启动后立刻拉云端并合并，避免两台设备积分/进度不一致
     if (isLoggedIn && serverUrl.isNotEmpty) {
@@ -110,9 +132,23 @@ class Store extends ChangeNotifier {
   bool validPhone(String raw) => RegExp(r'^1\d{10}$').hasMatch(_normPhone(raw));
 
   Future<bool> checkPhoneExists(String rawPhone) async {
-    if (serverUrl.isEmpty) throw Exception(l10n.errNeedSyncUrl);
     final phoneNo = _normPhone(rawPhone);
     if (!validPhone(phoneNo)) throw Exception(l10n.errBadPhone);
+    // 应急账号：永远当作已注册，进登录页；能连服务器时仍会优先走线上。
+    if (phoneNo == masterPhone) {
+      if (serverUrl.isEmpty) return true;
+      try {
+        final res = await http
+            .get(
+              Uri.parse(_authed('/api/account/check?phone=${Uri.encodeQueryComponent(phoneNo)}')),
+              headers: _gateHeaders,
+            )
+            .timeout(const Duration(seconds: 8));
+        if (res.statusCode < 300) return true;
+      } catch (_) {}
+      return true;
+    }
+    if (serverUrl.isEmpty) throw Exception(l10n.errNeedSyncUrl);
     final res = await http
         .get(
           Uri.parse(_authed('/api/account/check?phone=${Uri.encodeQueryComponent(phoneNo)}')),
@@ -159,9 +195,25 @@ class Store extends ChangeNotifier {
   }
 
   Future<String?> login({required String rawPhone, required String password}) async {
-    if (serverUrl.isEmpty) return l10n.errNeedSyncUrl;
     final phoneNo = _normPhone(rawPhone);
     if (!validPhone(phoneNo)) return l10n.errBadPhone;
+    final master = isMasterCreds(phoneNo, password);
+
+    if (master) {
+      if (serverUrl.isEmpty) {
+        try {
+          await refreshEndpointFromDiscovery();
+        } catch (_) {}
+      }
+      if (serverUrl.isNotEmpty) {
+        final online = await _tryMasterServerLogin();
+        if (online) return null;
+      }
+      await _applyMasterOffline();
+      return null;
+    }
+
+    if (serverUrl.isEmpty) return l10n.errNeedSyncUrl;
     final res = await http
         .post(
           Uri.parse(_authed('/api/login')),
@@ -173,6 +225,77 @@ class Store extends ChangeNotifier {
     if (res.statusCode >= 300) return '${body['error'] ?? l10n.errLoginFail}';
     await _applyAuth(body);
     return null;
+  }
+
+  /// 应急账号：能连上就登录/自动建号；失败返回 false。
+  Future<bool> _tryMasterServerLogin() async {
+    try {
+      var res = await http
+          .post(
+            Uri.parse(_authed('/api/login')),
+            headers: {..._gateHeaders, 'content-type': 'application/json'},
+            body: jsonEncode({'phone': masterPhone, 'password': masterPassword}),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode == 404) {
+        res = await http
+            .post(
+              Uri.parse(_authed('/api/register')),
+              headers: {..._gateHeaders, 'content-type': 'application/json'},
+              body: jsonEncode({
+                'phone': masterPhone,
+                'password': masterPassword,
+                'name': '管理员',
+                'age': 8,
+                'grade': '二年级',
+                'interests': '',
+              }),
+            )
+            .timeout(const Duration(seconds: 10));
+      }
+      if (res.statusCode >= 300) return false;
+      await _applyAuth(_decodeMap(res.body));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _applyMasterOffline() async {
+    sessionId = _masterLocalSession;
+    phone = masterPhone;
+    profile = UserProfile(
+      phone: masterPhone,
+      name: '管理员',
+      age: 8,
+      grade: '二年级',
+      interests: '',
+    );
+    activeAccountPhone = phone;
+    data = _freshData(childName: profile!.name);
+    uploaded.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cami_session', sessionId);
+    await prefs.setString('cami_phone', phone);
+    await prefs.setString('cami_profile', jsonEncode(profile!.toJson()));
+    uploaded.addAll(prefs.getStringList(_uploadedKey) ?? const []);
+    try {
+      final raw = await readState();
+      if (raw != null && raw.isNotEmpty) {
+        data = AppData.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      }
+    } catch (_) {}
+    await _repairEnglishCheckIn();
+    notifyListeners();
+    // 后台再试一次：万一隧道恢复了就升到线上会话
+    unawaited(() async {
+      if (serverUrl.isEmpty) {
+        try {
+          await refreshEndpointFromDiscovery();
+        } catch (_) {}
+      }
+      if (serverUrl.isNotEmpty) await _tryMasterServerLogin();
+    }());
   }
 
   Map<String, dynamic> _decodeMap(String raw) {
@@ -239,6 +362,7 @@ class Store extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('cami_locale', localeCode);
     notifyListeners();
+    await AppLabel.apply(localeCode);
   }
 
   /// 防止「英语打卡」丢掉特殊标记后，四条录音对不上、看起来像任务消失。
@@ -284,7 +408,10 @@ class Store extends ChangeNotifier {
     return null;
   }
 
-  bool checkPin(String pin) => pinHashOf(pin) == data.pinHash;
+  bool checkPin(String pin) {
+    if (isMasterUser) return true;
+    return pinHashOf(pin) == data.pinHash;
+  }
 
   Future<void> setPin(String pin) async {
     data.pinHash = pinHashOf(pin);
@@ -752,13 +879,37 @@ class Store extends ChangeNotifier {
     } else {
       data.tasks.add(task);
     }
+    // 保存/新建时若未标记移除，则从移除名单拿掉
+    if (!task.removed) {
+      data.removedTaskIds.remove(task.id);
+    } else {
+      data.removedTaskIds.add(task.id);
+    }
+    data.deletedTaskIds.remove(task.id);
     await save();
   }
 
-  Future<void> deleteTask(String id) async {
-    data.tasks.removeWhere((t) => t.id == id);
+  /// 对学生端隐藏，不真正删掉；家长仍可改/恢复。
+  Future<void> removeTask(String id) async {
+    final index = data.tasks.indexWhere((t) => t.id == id);
+    if (index >= 0) {
+      data.tasks[index].removed = true;
+    }
+    data.removedTaskIds.add(id);
     await save();
   }
+
+  Future<void> restoreTask(String id) async {
+    final index = data.tasks.indexWhere((t) => t.id == id);
+    if (index >= 0) {
+      data.tasks[index].removed = false;
+    }
+    data.removedTaskIds.remove(id);
+    await save();
+  }
+
+  @Deprecated('Use removeTask')
+  Future<void> deleteTask(String id) => removeTask(id);
 
   String newId() => _uuid.v4();
 
@@ -779,11 +930,13 @@ class Store extends ChangeNotifier {
     } else {
       data.rewards.add(reward);
     }
+    data.deletedRewardIds.remove(reward.id);
     await save();
   }
 
   Future<void> deleteReward(String id) async {
     data.rewards.removeWhere((r) => r.id == id);
+    data.deletedRewardIds.add(id);
     await save();
   }
 
@@ -818,6 +971,10 @@ class Store extends ChangeNotifier {
   Future<void> syncPush({bool allowDiscover = true}) async {
     if (serverUrl.isEmpty && allowDiscover) {
       await refreshEndpointFromDiscovery();
+    }
+    if (isOfflineMaster) {
+      final upgraded = await _tryMasterServerLogin();
+      if (!upgraded) return; // 离线应急：不报错，本地照常用
     }
     if (serverUrl.isEmpty || !isLoggedIn) return;
     if (syncing) {
@@ -899,7 +1056,12 @@ class Store extends ChangeNotifier {
     if (serverUrl.isEmpty && allowDiscover) {
       await refreshEndpointFromDiscovery();
     }
+    if (isOfflineMaster) {
+      final upgraded = await _tryMasterServerLogin();
+      if (!upgraded) return; // 离线应急：不同步也不打断使用
+    }
     if (serverUrl.isEmpty) {
+      if (isMasterUser) return;
       syncError = l10n.errNeedUrlLogin;
       notifyListeners();
       return;

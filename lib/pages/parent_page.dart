@@ -360,11 +360,13 @@ class ParentTasksPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<Store>();
-    final fixed = store.data.tasks.where((t) => !t.bonus).toList();
+    final s = context.l10n;
+    final active = store.data.tasks.where((t) => !t.bonus && !t.removed).toList();
+    final removed = store.data.tasks.where((t) => !t.bonus && t.removed).toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
-        Text(context.l10n.manageTasksBySubject, style: const TextStyle(color: CamiColors.muted)),
+        Text(s.manageTasksBySubject, style: const TextStyle(color: CamiColors.muted)),
         for (final subject in subjects) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(2, 16, 2, 8),
@@ -372,31 +374,31 @@ class ParentTasksPage extends StatelessWidget {
               children: [
                 RoseAvatar(
                   size: 34,
-                  label: context.l10n.subject(subject).substring(0, 1),
+                  label: s.subject(subject).substring(0, 1),
                   pale: true,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    context.l10n.subject(subject),
+                    s.subject(subject),
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                   ),
                 ),
                 Text(
-                  context.l10n.itemsCount(fixed.where((t) => t.subject == subject).length),
+                  s.itemsCount(active.where((t) => t.subject == subject).length),
                   style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700),
                 ),
               ],
             ),
           ),
-          for (final task in fixed.where((t) => t.subject == subject))
+          for (final task in active.where((t) => t.subject == subject))
             Card(
               child: ListTile(
                 title: Text(
-                  context.l10n.taskTitle(task.id, task.title),
+                  s.taskTitle(task.id, task.title),
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                subtitle: Text(taskMeta(task, context.l10n)),
+                subtitle: Text(taskMeta(task, s)),
                 trailing: const Icon(Icons.edit_outlined),
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EditTaskPage(task: task))),
               ),
@@ -408,16 +410,36 @@ class ParentTasksPage extends StatelessWidget {
                 final task = TaskTemplate(
                   id: store.newId(),
                   subject: subject,
-                  title: context.l10n.isEn ? '新的一项' : context.l10n.newItem,
+                  title: s.isEn ? '新的一项' : s.newItem,
                   minutes: 10,
                   points: 3,
                 );
                 Navigator.push(context, MaterialPageRoute(builder: (_) => EditTaskPage(task: task, fresh: true)));
               },
               icon: const Icon(Icons.add),
-              label: Text(context.l10n.addForSubject(context.l10n.subject(subject))),
+              label: Text(s.addForSubject(s.subject(subject))),
             ),
           ),
+        ],
+        if (removed.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Text(s.removedTasks, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text(s.removedTasksHint, style: const TextStyle(color: CamiColors.muted, height: 1.4)),
+          const SizedBox(height: 8),
+          for (final task in removed)
+            Card(
+              color: CamiColors.blush.withValues(alpha: 0.55),
+              child: ListTile(
+                title: Text(
+                  s.taskTitle(task.id, task.title),
+                  style: const TextStyle(fontWeight: FontWeight.w700, color: CamiColors.muted),
+                ),
+                subtitle: Text('${s.subject(task.subject)} · ${taskMeta(task, s)}'),
+                trailing: const Icon(Icons.visibility_off_outlined, color: CamiColors.muted),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EditTaskPage(task: task))),
+              ),
+            ),
         ],
       ],
     );
@@ -524,14 +546,26 @@ class _EditTaskPageState extends State<EditTaskPage> {
               if (context.mounted) Navigator.pop(context);
             },
           ),
-          if (!widget.fresh)
-            TextButton(
-              onPressed: () async {
-                await context.read<Store>().deleteTask(widget.task.id);
-                if (context.mounted) Navigator.pop(context);
-              },
-              child: Text(s.deleteThis),
-            ),
+          if (!widget.fresh) ...[
+            const SizedBox(height: 8),
+            if (widget.task.removed) ...[
+              Text(s.removeTaskHint, style: const TextStyle(color: CamiColors.muted, fontSize: 13)),
+              TextButton(
+                onPressed: () async {
+                  await context.read<Store>().restoreTask(widget.task.id);
+                  if (context.mounted) Navigator.pop(context);
+                },
+                child: Text(s.restoreTask),
+              ),
+            ] else
+              TextButton(
+                onPressed: () async {
+                  await context.read<Store>().removeTask(widget.task.id);
+                  if (context.mounted) Navigator.pop(context);
+                },
+                child: Text(s.removeTask),
+              ),
+          ],
         ],
       ),
     );

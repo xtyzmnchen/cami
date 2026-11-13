@@ -3,6 +3,15 @@ import 'package:flutter/services.dart';
 
 import '../theme.dart';
 
+/// 碰到炸弹时的明显震动提醒（接住 / 切到 / 点到）。
+Future<void> bombHitFeedback() async {
+  for (var i = 0; i < 3; i++) {
+    await HapticFeedback.vibrate();
+    await HapticFeedback.heavyImpact();
+    if (i < 2) await Future<void>.delayed(const Duration(milliseconds: 90));
+  }
+}
+
 /// 小游戏通用进度：关卡、连击、星星、生命。
 class GameProgress {
   GameProgress({this.lives = 3});
@@ -28,8 +37,7 @@ class GameProgress {
       banner != null && _bannerUntil != null && DateTime.now().isBefore(_bannerUntil!);
 
   void showBanner(String text, {Duration forDuration = const Duration(milliseconds: 1400)}) {
-    banner = text;
-    _bannerUntil = DateTime.now().add(forDuration);
+    // 游戏中不再弹出提示条，避免打断操作
   }
 
   void clearBannerIfNeeded() {
@@ -92,47 +100,12 @@ class GameFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    progress.clearBannerIfNeeded();
-    return Stack(
+    return Column(
       children: [
-        Column(
-          children: [
-            _Hud(progress: progress),
-            if (extra != null) extra!,
-            if (hint != null) ...[
-              const SizedBox(height: 4),
-              Text(hint!, style: const TextStyle(color: CamiColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
-            const SizedBox(height: 8),
-            Expanded(child: child),
-          ],
-        ),
-        if (progress.bannerVisible)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Center(
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0.85, end: 1),
-                  duration: const Duration(milliseconds: 350),
-                  builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFFFF6B9A), Color(0xFFFF8FB5)]),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(color: CamiColors.roseDeep.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 8)),
-                      ],
-                    ),
-                    child: Text(
-                      progress.banner!,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+        _Hud(progress: progress),
+        if (extra != null) extra!,
+        const SizedBox(height: 8),
+        Expanded(child: child),
       ],
     );
   }

@@ -10,6 +10,7 @@ class TaskTemplate {
     this.note = '',
     this.bonus = false,
     this.bonusDate,
+    this.removed = false,
   });
 
   String id;
@@ -22,6 +23,8 @@ class TaskTemplate {
   String note;
   bool bonus;
   String? bonusDate;
+  /// 家长「移除」后对学生端隐藏，数据仍保留，可再改/恢复。
+  bool removed;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -34,6 +37,7 @@ class TaskTemplate {
         'note': note,
         'bonus': bonus,
         'bonusDate': bonusDate,
+        'removed': removed,
       };
 
   factory TaskTemplate.fromJson(Map<String, dynamic> j) => TaskTemplate(
@@ -47,6 +51,7 @@ class TaskTemplate {
         note: (j['note'] as String?) ?? '',
         bonus: j['bonus'] == true,
         bonusDate: j['bonusDate'] as String?,
+        removed: j['removed'] == true,
       );
 }
 
@@ -362,9 +367,15 @@ class AppData {
     required this.redemptions,
     required this.playsUsed,
     Map<String, int>? playSecondsLeft,
+    Set<String>? removedTaskIds,
+    Set<String>? deletedTaskIds,
+    Set<String>? deletedRewardIds,
     VocabState? vocab,
     PoemState? poems,
   })  : playSecondsLeft = playSecondsLeft ?? {},
+        removedTaskIds = removedTaskIds ?? {},
+        deletedTaskIds = deletedTaskIds ?? {},
+        deletedRewardIds = deletedRewardIds ?? {},
         vocab = vocab ?? VocabState(),
         poems = poems ?? PoemState();
 
@@ -379,6 +390,12 @@ class AppData {
   Map<String, int> playsUsed;
   /// 当天游戏剩余秒数；有键且为 0 表示 10 分钟已用完。
   Map<String, int> playSecondsLeft;
+  /// 家长「移除」的任务 id（对学生隐藏）。合并时移除优先，避免旧机又显示出来。
+  Set<String> removedTaskIds;
+  /// 真正删除过的任务 id（兼容旧数据）；新逻辑用 [removedTaskIds] 软移除。
+  Set<String> deletedTaskIds;
+  /// 已删除兑换项 id（墓碑）。
+  Set<String> deletedRewardIds;
   VocabState vocab;
   PoemState poems;
 
@@ -392,39 +409,67 @@ class AppData {
         'redemptions': redemptions.map((e) => e.toJson()).toList(),
         'playsUsed': playsUsed,
         'playSecondsLeft': playSecondsLeft,
+        'removedTaskIds': removedTaskIds.toList(),
+        'deletedTaskIds': deletedTaskIds.toList(),
+        'deletedRewardIds': deletedRewardIds.toList(),
         'vocab': vocab.toJson(),
         'poems': poems.toJson(),
       };
 
-  factory AppData.fromJson(Map<String, dynamic> j) => AppData(
-        pinHash: j['pinHash'] as String,
-        childName: (j['childName'] as String?) ?? 'Cami',
-        updatedAt: (j['updatedAt'] as String?) ?? '',
-        tasks: ((j['tasks'] as List?) ?? [])
-            .map((e) => TaskTemplate.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-        progress: ((j['progress'] as List?) ?? [])
-            .map((e) => TaskProgress.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-        rewards: ((j['rewards'] as List?) ?? [])
-            .map((e) => Reward.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-        redemptions: ((j['redemptions'] as List?) ?? [])
-            .map((e) => Redemption.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-        playsUsed: ((j['playsUsed'] as Map?) ?? {}).map(
-          (k, v) => MapEntry(k.toString(), (v as num).toInt()),
-        ),
-        playSecondsLeft: ((j['playSecondsLeft'] as Map?) ?? {}).map(
-          (k, v) => MapEntry(k.toString(), (v as num).toInt()),
-        ),
-        vocab: VocabState.fromJson(
-          j['vocab'] is Map ? Map<String, dynamic>.from(j['vocab'] as Map) : null,
-        ),
-        poems: PoemState.fromJson(
-          j['poems'] is Map ? Map<String, dynamic>.from(j['poems'] as Map) : null,
-        ),
-      );
+  factory AppData.fromJson(Map<String, dynamic> j) {
+    final removedTaskIds = {
+      for (final e in ((j['removedTaskIds'] as List?) ?? [])) '$e',
+    };
+    final deletedTaskIds = {
+      for (final e in ((j['deletedTaskIds'] as List?) ?? [])) '$e',
+    };
+    final deletedRewardIds = {
+      for (final e in ((j['deletedRewardIds'] as List?) ?? [])) '$e',
+    };
+    // 旧版硬删墓碑：不再出现在列表；软移除则保留任务并标 removed。
+    final tasks = ((j['tasks'] as List?) ?? [])
+        .map((e) => TaskTemplate.fromJson(Map<String, dynamic>.from(e as Map)))
+        .where((t) => !deletedTaskIds.contains(t.id))
+        .map((t) {
+          if (removedTaskIds.contains(t.id) || t.removed) {
+            t.removed = true;
+            removedTaskIds.add(t.id);
+          }
+          return t;
+        })
+        .toList();
+    return AppData(
+      pinHash: j['pinHash'] as String,
+      childName: (j['childName'] as String?) ?? 'Cami',
+      updatedAt: (j['updatedAt'] as String?) ?? '',
+      tasks: tasks,
+      progress: ((j['progress'] as List?) ?? [])
+          .map((e) => TaskProgress.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      rewards: ((j['rewards'] as List?) ?? [])
+          .map((e) => Reward.fromJson(Map<String, dynamic>.from(e as Map)))
+          .where((r) => !deletedRewardIds.contains(r.id))
+          .toList(),
+      redemptions: ((j['redemptions'] as List?) ?? [])
+          .map((e) => Redemption.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      playsUsed: ((j['playsUsed'] as Map?) ?? {}).map(
+        (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+      ),
+      playSecondsLeft: ((j['playSecondsLeft'] as Map?) ?? {}).map(
+        (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+      ),
+      removedTaskIds: removedTaskIds,
+      deletedTaskIds: deletedTaskIds,
+      deletedRewardIds: deletedRewardIds,
+      vocab: VocabState.fromJson(
+        j['vocab'] is Map ? Map<String, dynamic>.from(j['vocab'] as Map) : null,
+      ),
+      poems: PoemState.fromJson(
+        j['poems'] is Map ? Map<String, dynamic>.from(j['poems'] as Map) : null,
+      ),
+    );
+  }
 }
 
 const subjects = ['语文', '数学', '英语', '其他'];

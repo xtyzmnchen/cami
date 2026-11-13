@@ -212,6 +212,10 @@ class CountdownRing extends StatelessWidget {
     this.size = 220,
     this.fontSize = 48,
     this.stroke = 6,
+    this.labelColor,
+    this.trackColor,
+    this.activeColor,
+    this.fillColor,
   });
 
   final String label;
@@ -219,6 +223,12 @@ class CountdownRing extends StatelessWidget {
   final double size;
   final double fontSize;
   final double stroke;
+  /// 深色游戏底上请传白色；任务/专注页保持默认深色字。
+  final Color? labelColor;
+  final Color? trackColor;
+  final Color? activeColor;
+  /// 圆环内底色，游戏页用半透明黑托住白字。
+  final Color? fillColor;
 
   @override
   Widget build(BuildContext context) {
@@ -227,15 +237,21 @@ class CountdownRing extends StatelessWidget {
       width: size,
       height: size,
       child: CustomPaint(
-        painter: _CountdownRingPainter(progress: value, stroke: stroke),
+        painter: _CountdownRingPainter(
+          progress: value,
+          stroke: stroke,
+          trackColor: trackColor ?? CamiColors.blush,
+          activeColor: activeColor ?? CamiColors.roseDeep,
+          fillColor: fillColor,
+        ),
         child: Center(
           child: Text(
             label,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: fontSize,
-              fontWeight: FontWeight.w600,
-              color: CamiColors.ink,
+              fontWeight: FontWeight.w700,
+              color: labelColor ?? CamiColors.ink,
               height: 1,
               letterSpacing: 1,
             ),
@@ -247,21 +263,33 @@ class CountdownRing extends StatelessWidget {
 }
 
 class _CountdownRingPainter extends CustomPainter {
-  _CountdownRingPainter({required this.progress, required this.stroke});
+  _CountdownRingPainter({
+    required this.progress,
+    required this.stroke,
+    required this.trackColor,
+    required this.activeColor,
+    this.fillColor,
+  });
   final double progress;
   final double stroke;
+  final Color trackColor;
+  final Color activeColor;
+  final Color? fillColor;
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (size.shortestSide - stroke) / 2;
+    if (fillColor != null) {
+      canvas.drawCircle(center, radius + stroke * 0.5, Paint()..color = fillColor!);
+    }
     final track = Paint()
-      ..color = CamiColors.blush
+      ..color = trackColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round;
     final active = Paint()
-      ..color = CamiColors.roseDeep
+      ..color = activeColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round;
@@ -277,7 +305,11 @@ class _CountdownRingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CountdownRingPainter oldDelegate) =>
-      oldDelegate.progress != progress || oldDelegate.stroke != stroke;
+      oldDelegate.progress != progress ||
+      oldDelegate.stroke != stroke ||
+      oldDelegate.trackColor != trackColor ||
+      oldDelegate.activeColor != activeColor ||
+      oldDelegate.fillColor != fillColor;
 }
 
 class RoseButton extends StatelessWidget {
@@ -526,7 +558,7 @@ void toast(BuildContext context, String text) {
 }
 
 String taskMeta(TaskTemplate task, [AppL10n? l10n]) {
-  final s = l10n ?? AppL10n(const Locale('zh', 'CN'));
+  final s = l10n ?? AppL10n(const Locale('en'));
   if (task.schoolOnly) return s.schoolOnlyMeta(task.points);
   final bits = <String>[s.minutesPoints(task.minutes, task.points)];
   if (task.note.isNotEmpty) bits.add(task.note);

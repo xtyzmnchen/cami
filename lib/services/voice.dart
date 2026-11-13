@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
+import 'game_bgm.dart';
+
 class Voice {
   static final _tts = FlutterTts();
   static String? _lang;
@@ -17,9 +19,17 @@ class Voice {
         await _tts.setSpeechRate(rate);
         _lang = language;
       }
+      await GameBgm.duck();
       await _tts.stop();
       await _tts.speak(text);
-    } catch (_) {}
+      // 按字数估个时长再恢复 BGM，避免个别机型 completion 卡住
+      final ms = (text.runes.length * 160 + 600).clamp(900, 4500);
+      unawaited(
+        Future<void>.delayed(Duration(milliseconds: ms), GameBgm.unduck),
+      );
+    } catch (_) {
+      await GameBgm.unduck();
+    }
   }
 
   static Future<void> say(String text) => _speak(text, 'zh-CN', 0.46);

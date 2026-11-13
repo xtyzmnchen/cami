@@ -25,12 +25,19 @@ class GameSprites {
   static const rainbow = 'assets/games/mem_rainbow.jpg';
   static const cat = 'assets/games/mem_cat.jpg';
   static const cardBack = 'assets/games/mem_card_back.jpg';
-  static const runnerHero = 'assets/games/runner_hero.jpg';
-  static const runnerBox = 'assets/games/runner_box.jpg';
-  static const runnerHedge = 'assets/games/runner_hedge.jpg';
-  static const whackMole = 'assets/games/whack_mole.jpg';
-  static const whackHole = 'assets/games/whack_hole.jpg';
-  static const whackHammer = 'assets/games/whack_hammer.jpg';
+  static const runnerHero = 'assets/games/runner_princess.png';
+  static const runnerHeroSlide = 'assets/games/runner_princess_slide.png';
+  static const runnerBox = 'assets/games/runner_crate.png';
+  static const runnerHedge = 'assets/games/runner_hedge_tall.png';
+  static const runnerBarrier = 'assets/games/runner_barrier.png';
+  static const runnerCoin = 'assets/games/runner_coin.png';
+  /// 旧资源保留兼容
+  static const runnerHeroLegacy = 'assets/games/runner_hero.jpg';
+  static const whackMole = 'assets/games/whack_mole.png';
+  static const whackMoleGold = 'assets/games/whack_mole_gold.png';
+  static const whackHole = 'assets/games/whack_hole.png';
+  static const whackHammer = 'assets/games/whack_hammer.png';
+  static const whackDirt = 'assets/games/whack_dirt.png';
 
   static const fruits = [
     apple,
@@ -104,6 +111,28 @@ class GameSprites {
           height: height ?? size,
           child: const ColoredBox(color: Color(0xFFFFE4EF)),
         ),
+      ),
+    );
+  }
+
+  /// 透明 PNG 精灵（跑酷角色 / 金币 / 障碍）。
+  static Widget sprite(
+    String asset, {
+    double? size,
+    double? width,
+    double? height,
+    BoxFit fit = BoxFit.contain,
+  }) {
+    return Image.asset(
+      asset,
+      width: width ?? size,
+      height: height ?? size,
+      fit: fit,
+      filterQuality: FilterQuality.high,
+      errorBuilder: (_, __, ___) => SizedBox(
+        width: width ?? size,
+        height: height ?? size,
+        child: const ColoredBox(color: Color(0x33FFE4EF)),
       ),
     );
   }

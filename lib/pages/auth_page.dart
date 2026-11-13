@@ -143,14 +143,37 @@ class _AuthPageState extends State<AuthPage>
       error = null;
     });
     final store = context.read<Store>();
+    final master = Store.isMasterPhone(phone.text);
     try {
+      if (server.text.trim().isNotEmpty) {
+        await store.setServer(server.text, token.text);
+      } else if (store.serverUrl.isEmpty) {
+        try {
+          await store.refreshEndpointFromDiscovery();
+        } catch (_) {}
+      }
+      if (master) {
+        // 应急账号：无服务器也进登录；有服务器则尽量探测
+        if (store.serverUrl.isNotEmpty) {
+          try {
+            await store.checkPhoneExists(phone.text);
+          } catch (_) {}
+        }
+        if (!mounted) return;
+        setState(() => step = 1);
+        return;
+      }
       await store.setServer(server.text, token.text);
       final exists = await store.checkPhoneExists(phone.text);
       if (!mounted) return;
       setState(() => step = exists ? 1 : 2);
     } catch (e) {
       if (!mounted) return;
-      setState(() => error = '$e'.replaceFirst('Exception: ', ''));
+      if (master) {
+        setState(() => step = 1);
+      } else {
+        setState(() => error = '$e'.replaceFirst('Exception: ', ''));
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }

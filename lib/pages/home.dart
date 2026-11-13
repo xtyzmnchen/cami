@@ -46,14 +46,31 @@ class HomePage extends StatelessWidget {
               ),
             ),
             IconButton(
+              onPressed: store.syncing ? null : () => store.syncPull(),
+              icon: store.syncing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: CamiColors.roseDeep),
+                    )
+                  : const Icon(Icons.refresh, color: CamiColors.roseDeep),
+              tooltip: s.refresh,
+            ),
+            IconButton(
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FocusPage())),
               icon: const Icon(Icons.timer_outlined, color: CamiColors.roseDeep),
               tooltip: s.pomodoro,
             ),
             FilledButton.tonal(
               onPressed: () async {
+                final store = context.read<Store>();
+                // 应急最高权限账号免 PIN；普通账号仍需密码
+                if (store.isMasterUser) {
+                  await store.setParentMode(true);
+                  return;
+                }
                 if (await askPin(context) && context.mounted) {
-                  await context.read<Store>().setParentMode(true);
+                  await store.setParentMode(true);
                 } else if (context.mounted) {
                   toast(context, s.wrongPin);
                 }

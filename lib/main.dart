@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
@@ -16,6 +17,9 @@ import 'widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations(const [
+    DeviceOrientation.portraitUp,
+  ]);
   await Alerts.init();
   final store = Store();
   await store.load();
@@ -69,7 +73,7 @@ class _CamiAppState extends State<CamiApp> with WidgetsBindingObserver {
       debugShowCheckedModeBanner: false,
       theme: camiTheme(),
       locale: locale,
-      supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
+      supportedLocales: const [Locale('en'), Locale('zh', 'CN')],
       localizationsDelegates: const [
         AppL10nDelegate(),
         GlobalMaterialLocalizations.delegate,
@@ -92,6 +96,12 @@ class Shell extends StatefulWidget {
 
 class _ShellState extends State<Shell> {
   var index = 0;
+
+  void _pull() {
+    if (!mounted) return;
+    final store = context.read<Store>();
+    if (store.isLoggedIn) store.syncPull();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,7 +135,10 @@ class _ShellState extends State<Shell> {
         ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: index,
-          onDestinationSelected: (value) => setState(() => index = value),
+          onDestinationSelected: (value) {
+            setState(() => index = value);
+            _pull(); // 点底部 tab 同步云端
+          },
           destinations: [
             NavigationDestination(
               icon: _TabIcon(CamiAssets.tabToday, selected: false),

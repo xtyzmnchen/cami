@@ -84,6 +84,30 @@ ensure_server() {
   return 1
 }
 
+kill_all_cpolar() {
+  pkill -f "${CPOLAR} http" 2>/dev/null || true
+  pkill -f '[c]polar' 2>/dev/null || true
+  killall cpolar 2>/dev/null || true
+  sleep 1
+  pkill -9 -f '[c]polar' 2>/dev/null || true
+  killall -9 cpolar 2>/dev/null || true
+}
+
+read_cpolar_url_from_api() {
+  # cpolar 本地面板常见端口
+  for port in 4040 4041 4042 4043; do
+    local body url
+    body="$(curl -fsS --connect-timeout 1 --max-time 3 "http://127.0.0.1:${port}/api/tunnels" 2>/dev/null || true)"
+    [[ -z "$body" ]] && continue
+    url="$(printf '%s' "$body" | grep -Eo 'https://[a-z0-9.-]+\.cpolar\.[a-z.]+' | tail -1 || true)"
+    if [[ -n "$url" ]]; then
+      echo "$url"
+      return 0
+    fi
+  done
+  return 1
+}
+
 read_cpolar_url_from_log() {
   if command -v rg >/dev/null 2>&1; then
     rg -o 'https://[a-z0-9.-]+\.cpolar\.[a-z.]+' "$CPOLAR_LOG" 2>/dev/null | tail -1 || true
@@ -94,7 +118,7 @@ read_cpolar_url_from_log() {
 
 restart_cpolar_and_publish() {
   log "重启 cpolar 并发布新地址..."
-  pkill -f "${CPOLAR} http" 2>/dev/null || true
+  kill_all_cpolar
   sleep 2
   : >"$CPOLAR_LOG"
   "${CPOLAR}" http "${PORT}" -log=stdout -log-level=INFO -region="${REGION}" >>"$CPOLAR_LOG" 2>&1 &
@@ -102,20 +126,25 @@ restart_cpolar_and_publish() {
   echo "$cpid" >"$CPOLAR_PID_FILE"
 
   local url=""
-  for _ in $(seq 1 45); do
+  for _ in $(seq 1 60); do
     sleep 1
     if ! kill -0 "$cpid" 2>/dev/null; then
-      log "cpolar 进程退出，稍后重试"
+      log "cpolar 进程退出，日志："
+      tail -n 20 "$CPOLAR_LOG" 2>/dev/null || true
       return 1
     fi
     url="$(read_cpolar_url_from_log)"
+    if [[ -z "$url" ]]; then
+      url="$(read_cpolar_url_from_api | tail -1)"
+    fi
     if [[ -n "$url" ]]; then
       break
     fi
   done
 
   if [[ -z "$url" ]]; then
-    log "未拿到公网地址"
+    log "未拿到公网地址，日志："
+    tail -n 40 "$CPOLAR_LOG" 2>/dev/null || true
     return 1
   fi
 

@@ -9,16 +9,19 @@ import 'game_kit.dart';
 import 'sprites.dart';
 
 class SnakeGame extends StatefulWidget {
-  const SnakeGame({super.key, required this.onScore});
+  const SnakeGame({super.key, required this.onScore, this.onQuit});
   final ValueChanged<int> onScore;
+  /// 选择不继续时退出整局游戏页。
+  final VoidCallback? onQuit;
 
   @override
   State<SnakeGame> createState() => _SnakeGameState();
 }
 
 class _SnakeGameState extends State<SnakeGame> {
-  static const cols = 12;
-  static const rows = 16;
+  // 横屏棋盘：更宽更矮，配合正方形格子
+  static const cols = 18;
+  static const rows = 10;
   final _rng = Random();
   final _progress = GameProgress(lives: 3);
   late List<Point<int>> _snake;
@@ -27,9 +30,15 @@ class _SnakeGameState extends State<SnakeGame> {
   late Point<int> _food;
   var _foodBonus = false;
   var _eatenThisLevel = 0;
+  var _asking = false;
   Timer? _timer;
 
-  int get _intervalMs => max(90, 300 - (_progress.level - 1) * 22);
+  /// 开局慢，蛇越长（吃得越多）越快；关卡再略微加压。
+  int get _intervalMs {
+    final grown = max(0, _snake.length - 3);
+    return max(120, 520 - grown * 22 - (_progress.level - 1) * 10);
+  }
+
   int get _need => 4 + _progress.level;
 
   @override
@@ -46,7 +55,13 @@ class _SnakeGameState extends State<SnakeGame> {
   }
 
   void _boot() {
-    _snake = [const Point(5, 8), const Point(4, 8), const Point(3, 8)];
+    final midY = rows ~/ 2;
+    final midX = cols ~/ 2;
+    _snake = [
+      Point(midX, midY),
+      Point(midX - 1, midY),
+      Point(midX - 2, midY),
+    ];
     _dir = const Point(1, 0);
     _next = _dir;
     _food = _freeCell();
@@ -72,22 +87,16 @@ class _SnakeGameState extends State<SnakeGame> {
   }
 
   void _tick() {
-    if (_progress.lives <= 0) return;
+    if (_asking || _progress.lives <= 0) return;
     _dir = _next;
     final head = Point(_snake.first.x + _dir.x, _snake.first.y + _dir.y);
     if (head.x < 0 || head.y < 0 || head.x >= cols || head.y >= rows || _snake.contains(head)) {
+      _timer?.cancel();
       setState(() {
         _progress.loseLife();
-        _progress.showBanner(_progress.lives > 0 ? _progress.t('撞到了！还剩 ${_progress.lives} 心', 'Ouch! ${_progress.lives} hearts left') : _progress.t('本局结束，再开一局', 'Round over — try again'));
-        if (_progress.lives > 0) {
-          _boot();
-        } else {
-          _progress.lives = 3;
-          _progress.level = max(1, _progress.level - 1);
-          _boot();
-          _restartTimer();
-        }
+        _asking = true;
       });
+      unawaited(_askNextRound());
       return;
     }
     setState(() {
@@ -103,6 +112,8 @@ class _SnakeGameState extends State<SnakeGame> {
         _eatenThisLevel++;
         _foodBonus = _rng.nextDouble() < 0.18;
         _food = _freeCell();
+        // 每吃一个就按蛇长提速
+        _restartTimer();
         if (_eatenThisLevel >= _need) {
           _progress.levelUp(onScore: widget.onScore, label: _progress.t('第 ${_progress.level} 关！蛇更快了', 'Level ${_progress.level}! Snake faster'));
           _eatenThisLevel = 0;
@@ -110,11 +121,52 @@ class _SnakeGameState extends State<SnakeGame> {
         }
       } else {
         _snake.removeLast();
-        if (_progress.combo > 0 && _rng.nextDouble() < 0.02) {
-          // soft decay unused
-        }
       }
     });
+  }
+
+  Future<void> _askNextRound() async {
+    if (!mounted) return;
+    final livesLeft = _progress.lives;
+    final title = livesLeft > 0
+        ? _progress.t('撞到了', 'Crashed')
+        : _progress.t('没有命了', 'No lives left');
+    final body = livesLeft > 0
+        ? _progress.t('还剩 $livesLeft 条命，要下一局吗？', '$livesLeft lives left. Play next round?')
+        : _progress.t('要重新开始下一局吗？', 'Start a new round?');
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(_progress.t('退出', 'Quit')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(_progress.t('下一局', 'Next round')),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (go == true) {
+      setState(() {
+        if (livesLeft <= 0) {
+          _progress.lives = 3;
+          _progress.level = max(1, _progress.level - 1);
+        }
+        _boot();
+        _asking = false;
+      });
+      _restartTimer();
+    } else {
+      _asking = false;
+      widget.onQuit?.call();
+    }
   }
 
   @override
@@ -138,57 +190,66 @@ class _SnakeGameState extends State<SnakeGame> {
           },
           child: LayoutBuilder(
             builder: (context, box) {
-              final cellW = box.maxWidth / cols;
-              final cellH = box.maxHeight / rows;
+              // 横屏时用正方形格子，避免蛇身/水果被拉扁
+              final cell = min(box.maxWidth / cols, box.maxHeight / rows);
+              final boardW = cell * cols;
+              final boardH = cell * rows;
+              final ox = (box.maxWidth - boardW) / 2;
+              final oy = (box.maxHeight - boardH) / 2;
+              final pad = max(1.0, cell * 0.06);
               return Stack(
                 children: [
-                  // checkerboard
-                  for (var y = 0; y < rows; y++)
-                    for (var x = 0; x < cols; x++)
-                      Positioned(
-                        left: x * cellW,
-                        top: y * cellH,
-                        width: cellW,
-                        height: cellH,
-                        child: Container(
-                          margin: const EdgeInsets.all(1.2),
-                          decoration: BoxDecoration(
-                            color: (x + y).isEven ? const Color(0xFFFFF0F5) : const Color(0xFFFFE4EF),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
                   Positioned(
-                    left: _food.x * cellW + 1,
-                    top: _food.y * cellH + 1,
-                    width: cellW - 2,
-                    height: cellH - 2,
-                    child: GameSprites.img(_foodBonus ? GameSprites.star : GameSprites.apple, size: cellW - 2),
-                  ),
-                  for (var i = 0; i < _snake.length; i++)
-                    Positioned(
-                      left: _snake[i].x * cellW + 2,
-                      top: _snake[i].y * cellH + 2,
-                      width: cellW - 4,
-                      height: cellH - 4,
-                      child: i == 0
-                          ? GameSprites.img(GameSprites.strawberry, size: cellW - 4)
-                          : DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(colors: [CamiColors.rose, Color(0xFFFFB6D0)]),
-                                borderRadius: BorderRadius.circular(8),
-                                boxShadow: [
-                                  BoxShadow(color: CamiColors.roseDeep.withValues(alpha: 0.25), blurRadius: 4),
-                                ],
+                    left: ox,
+                    top: oy,
+                    width: boardW,
+                    height: boardH,
+                    child: Stack(
+                      children: [
+                        for (var y = 0; y < rows; y++)
+                          for (var x = 0; x < cols; x++)
+                            Positioned(
+                              left: x * cell,
+                              top: y * cell,
+                              width: cell,
+                              height: cell,
+                              child: Container(
+                                margin: EdgeInsets.all(pad),
+                                decoration: BoxDecoration(
+                                  color: (x + y).isEven ? const Color(0xFFFFF0F5) : const Color(0xFFFFE4EF),
+                                  borderRadius: BorderRadius.circular(cell * 0.18),
+                                ),
                               ),
                             ),
-                    ),
-                  Positioned(
-                    left: 10,
-                    bottom: 10,
-                    child: Text(
-                      '本关再吃 ${_need - _eatenThisLevel} 个升级',
-                      style: const TextStyle(fontWeight: FontWeight.w800, color: CamiColors.roseDeep, fontSize: 12),
+                        Positioned(
+                          left: _food.x * cell + pad,
+                          top: _food.y * cell + pad,
+                          width: cell - pad * 2,
+                          height: cell - pad * 2,
+                          child: GameSprites.img(
+                            _foodBonus ? GameSprites.star : GameSprites.apple,
+                            size: cell - pad * 2,
+                          ),
+                        ),
+                        for (var i = 0; i < _snake.length; i++)
+                          Positioned(
+                            left: _snake[i].x * cell + pad * 1.5,
+                            top: _snake[i].y * cell + pad * 1.5,
+                            width: cell - pad * 3,
+                            height: cell - pad * 3,
+                            child: i == 0
+                                ? GameSprites.img(GameSprites.strawberry, size: cell - pad * 3)
+                                : DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(colors: [CamiColors.rose, Color(0xFFFFB6D0)]),
+                                      borderRadius: BorderRadius.circular(cell * 0.28),
+                                      boxShadow: [
+                                        BoxShadow(color: CamiColors.roseDeep.withValues(alpha: 0.25), blurRadius: 4),
+                                      ],
+                                    ),
+                                  ),
+                          ),
+                      ],
                     ),
                   ),
                 ],

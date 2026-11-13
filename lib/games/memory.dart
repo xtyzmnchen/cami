@@ -25,8 +25,8 @@ class _MemoryGameState extends State<MemoryGame> {
   var _pairsThisRound = 0;
   DateTime? _started;
 
-  int get _pairCount => (3 + (_progress.level - 1)).clamp(3, 8);
-  int get _cols => _pairCount <= 4 ? 3 : 4;
+  /// 开局 4 对，逐渐加到 10 对，方便横屏铺满。
+  int get _pairCount => (4 + (_progress.level - 1)).clamp(4, 10);
 
   @override
   void didChangeDependencies() {
@@ -52,6 +52,31 @@ class _MemoryGameState extends State<MemoryGame> {
     _started = DateTime.now();
   }
 
+  /// 选一组行列：尽量铺满可用区域，卡片接近方形。
+  (int cols, int rows) _bestGrid(int cards, double width, double height) {
+    var bestCols = cards;
+    var bestRows = 1;
+    var bestScore = -1e9;
+    for (var cols = 2; cols <= cards; cols++) {
+      final rows = (cards / cols).ceil();
+      final cellW = width / cols;
+      final cellH = height / rows;
+      if (cellW < 36 || cellH < 36) continue;
+      final aspect = cellW / cellH;
+      // 横屏优先更多列；接近正方形更好
+      final aspectScore = 1 / (1 + (aspect - 1).abs());
+      final fill = (cards / (cols * rows));
+      final landscapeBias = width > height ? cols * 0.02 : rows * 0.02;
+      final score = aspectScore * 2 + fill + landscapeBias;
+      if (score > bestScore) {
+        bestScore = score;
+        bestCols = cols;
+        bestRows = rows;
+      }
+    }
+    return (bestCols, bestRows);
+  }
+
   void _tap(int index) {
     if (_lock || _known.contains(index) || _open.contains(index) || _progress.lives <= 0) return;
     HapticFeedback.selectionClick();
@@ -75,7 +100,9 @@ class _MemoryGameState extends State<MemoryGame> {
         widget.onScore(_progress.score);
         _progress.levelUp(
           onScore: widget.onScore,
-          label: secs < 25 ? _progress.t('超快通关！第 ${_progress.level} 关', 'Speedy clear! Level ${_progress.level}') : _progress.t('第 ${_progress.level} 关 · 卡片更多了', 'Level ${_progress.level} · more cards'),
+          label: secs < 25
+              ? _progress.t('超快通关！第 ${_progress.level} 关', 'Speedy clear! Level ${_progress.level}')
+              : _progress.t('第 ${_progress.level} 关 · 卡片更多了', 'Level ${_progress.level} · more cards'),
         );
         Future.delayed(const Duration(milliseconds: 900), () {
           if (mounted) setState(_deal);
@@ -108,50 +135,74 @@ class _MemoryGameState extends State<MemoryGame> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
               child: Row(
                 children: [
-                  Text('配对 $_pairsThisRound/$_pairCount', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text(
+                    _progress.t('配对 $_pairsThisRound/$_pairCount', 'Pairs $_pairsThisRound/$_pairCount'),
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
                   const Spacer(),
-                  Text('步数 $_moves', style: const TextStyle(color: CamiColors.muted, fontWeight: FontWeight.w600)),
+                  Text(
+                    _progress.t('步数 $_moves', 'Moves $_moves'),
+                    style: const TextStyle(color: CamiColors.muted, fontWeight: FontWeight.w600),
+                  ),
                 ],
               ),
             ),
             Expanded(
-              child: GridView.builder(
-                padding: const EdgeInsets.all(12),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: _cols,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  childAspectRatio: 0.92,
-                ),
-                itemCount: _deck.length,
-                itemBuilder: (_, i) {
-                  final shown = _open.contains(i) || _known.contains(i);
-                  final matched = _known.contains(i);
-                  return GestureDetector(
-                    onTap: () => _tap(i),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: matched ? CamiColors.gold : Colors.white70, width: 1.6),
-                        boxShadow: [
-                          BoxShadow(
-                            color: CamiColors.rose.withValues(alpha: 0.22),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  const gap = 8.0;
+                  const pad = 10.0;
+                  final availW = max(1.0, box.maxWidth - pad * 2);
+                  final availH = max(1.0, box.maxHeight - pad * 2);
+                  final (cols, rows) = _bestGrid(_deck.length, availW, availH);
+                  final cellW = (availW - gap * (cols - 1)) / cols;
+                  final cellH = (availH - gap * (rows - 1)) / rows;
+                  final aspect = cellW / max(1.0, cellH);
+                  return Padding(
+                    padding: const EdgeInsets.all(pad),
+                    child: GridView.builder(
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _deck.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: cols,
+                        mainAxisSpacing: gap,
+                        crossAxisSpacing: gap,
+                        childAspectRatio: aspect,
+                      ),
+                      itemBuilder: (_, i) {
+                        final shown = _open.contains(i) || _known.contains(i);
+                        final matched = _known.contains(i);
+                        return GestureDetector(
+                          onTap: () => _tap(i),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: matched ? CamiColors.gold : Colors.white70,
+                                width: 1.6,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: CamiColors.rose.withValues(alpha: 0.22),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              child: shown
+                                  ? GameSprites.tile(_deck[i], radius: 0, fit: BoxFit.cover)
+                                  : GameSprites.tile(GameSprites.cardBack, radius: 0, fit: BoxFit.cover),
+                            ),
                           ),
-                        ],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child: shown
-                            ? GameSprites.tile(_deck[i], radius: 0, fit: BoxFit.cover)
-                            : GameSprites.tile(GameSprites.cardBack, radius: 0, fit: BoxFit.cover),
-                      ),
+                        );
+                      },
                     ),
                   );
                 },

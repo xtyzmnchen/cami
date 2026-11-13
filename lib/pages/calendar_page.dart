@@ -34,7 +34,7 @@ class _CalendarPageState extends State<CalendarPage> {
       helpText: context.l10n.pickDate,
       cancelText: context.l10n.cancel,
       confirmText: context.l10n.view,
-      locale: const Locale('zh', 'CN'),
+      locale: Localizations.localeOf(context),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(

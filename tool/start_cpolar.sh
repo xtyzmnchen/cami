@@ -15,14 +15,17 @@ if [[ ! -x "$CPOLAR" ]]; then
 fi
 
 pkill -f "$CPOLAR http" 2>/dev/null || true
-sleep 1
+pkill -f '[c]polar' 2>/dev/null || true
+killall cpolar 2>/dev/null || true
+sleep 2
+pkill -9 -f '[c]polar' 2>/dev/null || true
 : >"$LOG"
 "$CPOLAR" http "$PORT" -log=stdout -log-level=INFO -region="$REGION" >>"$LOG" 2>&1 &
 CPID=$!
 echo "cpolar pid=$CPID，日志 $LOG"
 
 URL=""
-for _ in $(seq 1 40); do
+for _ in $(seq 1 60); do
   sleep 1
   if ! kill -0 "$CPID" 2>/dev/null; then
     echo "cpolar 已退出，见日志："
@@ -33,6 +36,15 @@ for _ in $(seq 1 40); do
     URL="$(rg -o 'https://[a-z0-9.-]+\.cpolar\.[a-z.]+' "$LOG" | tail -1 || true)"
   else
     URL="$(grep -Eo 'https://[a-z0-9.-]+\.cpolar\.[a-z.]+' "$LOG" | tail -1 || true)"
+  fi
+  if [[ -z "$URL" ]]; then
+    for port in 4040 4041 4042 4043; do
+      body="$(curl -fsS --connect-timeout 1 --max-time 3 "http://127.0.0.1:${port}/api/tunnels" 2>/dev/null || true)"
+      if [[ -n "$body" ]]; then
+        URL="$(printf '%s' "$body" | grep -Eo 'https://[a-z0-9.-]+\.cpolar\.[a-z.]+' | tail -1 || true)"
+        [[ -n "$URL" ]] && break
+      fi
+    done
   fi
   if [[ -n "$URL" ]]; then
     break

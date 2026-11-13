@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../games/catch_fruit.dart';
@@ -12,6 +13,7 @@ import '../games/snake.dart';
 import '../games/whack_mole.dart';
 import '../l10n/l10n.dart';
 import '../logic.dart';
+import '../services/game_bgm.dart';
 import '../services/voice.dart';
 import '../store.dart';
 import '../theme.dart';
@@ -37,6 +39,16 @@ class _PlayPageState extends State<PlayPage> {
   @override
   void initState() {
     super.initState();
+    unawaited(() async {
+      try {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        await SystemChrome.setPreferredOrientations(const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      } catch (_) {}
+    }());
+    unawaited(GameBgm.start(widget.kind));
     if (widget.testing) {
       left = playBudgetSeconds;
     } else {
@@ -55,6 +67,20 @@ class _PlayPageState extends State<PlayPage> {
     });
   }
 
+  Future<void> _restorePortrait() async {
+    try {
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+      ]);
+      await SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.edgeToEdge,
+        overlays: SystemUiOverlay.values,
+      );
+    } catch (_) {
+      // iOS 在横竖屏切换未完成时会抛 UISceneError，忽略即可
+    }
+  }
+
   Future<void> _persist(int seconds) async {
     if (widget.testing || !mounted) return;
     final store = context.read<Store>();
@@ -65,6 +91,7 @@ class _PlayPageState extends State<PlayPage> {
     if (_closed) return;
     _closed = true;
     _timer?.cancel();
+    await GameBgm.stop();
     final remain = left.clamp(0, playBudgetSeconds);
     final say = !widget.testing && (timeUp || remain <= 0)
         ? (score >= 20 ? context.l10n.awesome : context.l10n.timeUp)
@@ -73,12 +100,16 @@ class _PlayPageState extends State<PlayPage> {
       await _persist(remain);
       if (say != null) await Voice.say(say);
     }
+    await _restorePortrait();
     if (mounted) Navigator.pop(context, remain <= 0 && !widget.testing);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    unawaited(GameBgm.stop());
+    // 异常退出时也尽量回到竖屏
+    unawaited(_restorePortrait());
     super.dispose();
   }
 
@@ -87,69 +118,90 @@ class _PlayPageState extends State<PlayPage> {
     final s = context.l10n;
     final clock = '${(left ~/ 60).toString().padLeft(2, '0')}:${(left % 60).toString().padLeft(2, '0')}';
     final title = s.gameName(widget.kind);
+    final pad = MediaQuery.paddingOf(context);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _finish();
       },
-      child: RoseBackdrop(
-        intensity: 0.35,
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            title: Text(widget.testing ? s.testingSuffix(title) : title),
-            leading: IconButton(onPressed: _finish, icon: const Icon(Icons.close)),
-          ),
-          body: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.88),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: CamiColors.line),
+      child: Scaffold(
+        backgroundColor: const Color(0xFF1A0F14),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(child: _game()),
+            Positioned(
+              left: pad.left + 12,
+              right: pad.right + 12,
+              top: pad.top + 8,
+              child: Row(
+                children: [
+                  Material(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      onPressed: _finish,
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      tooltip: s.close,
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${s.scoreThisRound} $score', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
-                            Text(
-                              widget.testing ? s.testingNoTime : s.keepTimeOnExit,
-                              style: const TextStyle(color: CamiColors.muted, fontSize: 11, fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      CountdownRing(
-                        label: clock,
-                        progress: left / playBudgetSeconds,
-                        size: 72,
-                        fontSize: 15,
-                        stroke: 4,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.testing ? s.testingSuffix(title) : title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                          ),
+                          Text(
+                            '${s.scoreThisRound} $score',
+                            style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                Expanded(child: _game()),
-                TextButton(
-                  onPressed: _finish,
-                  child: Text(
-                    widget.testing
-                        ? s.exitTest
-                        : (left > 0 ? s.exitKeepTime : s.timeUp),
-                    style: const TextStyle(color: CamiColors.roseDeep, fontWeight: FontWeight.w700),
+                  const SizedBox(width: 8),
+                  Material(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      onPressed: () async {
+                        await GameBgm.toggleMute();
+                        if (mounted) setState(() {});
+                      },
+                      icon: Icon(
+                        GameBgm.muted ? Icons.volume_off_rounded : Icons.music_note_rounded,
+                        color: Colors.white,
+                      ),
+                      tooltip: GameBgm.muted ? '音乐关' : '音乐开',
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  CountdownRing(
+                    label: clock,
+                    progress: left / playBudgetSeconds,
+                    size: 64,
+                    fontSize: 13,
+                    stroke: 4,
+                    labelColor: Colors.white,
+                    trackColor: Colors.white24,
+                    activeColor: CamiColors.rose,
+                    fillColor: Colors.black.withValues(alpha: 0.45),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -164,7 +216,7 @@ class _PlayPageState extends State<PlayPage> {
     }
 
     return switch (widget.kind) {
-      GameKind.snake => SnakeGame(onScore: scored),
+      GameKind.snake => SnakeGame(onScore: scored, onQuit: _finish),
       GameKind.memory => MemoryGame(onScore: scored),
       GameKind.catchFruit => CatchFruitGame(onScore: scored),
       GameKind.sliceFruit => SliceFruitGame(onScore: scored),

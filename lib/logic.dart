@@ -38,6 +38,7 @@ int pointBalance(AppData data) => earnedPoints(data) - redeemedPoints(data);
 
 List<TaskTemplate> tasksOn(AppData data, String date, [String? subject]) {
   return data.tasks.where((t) {
+    if (t.removed || data.removedTaskIds.contains(t.id)) return false;
     if (subject != null && t.subject != subject) return false;
     if (t.bonus) return t.bonusDate == date;
     return true;
@@ -70,7 +71,9 @@ int yearPoints(AppData data, int year) => data.progress
     .fold(0, (sum, p) => sum + p.points);
 
 bool allDefaultDone(AppData data, String date) {
-  final tasks = data.tasks.where((t) => !t.bonus);
+  final tasks = data.tasks.where(
+    (t) => !t.bonus && !t.removed && !data.removedTaskIds.contains(t.id),
+  );
   if (tasks.isEmpty) return false;
   return tasks.every((t) => isDone(data, date, t.id));
 }
@@ -131,14 +134,56 @@ List<GameKind> weekGames(DateTime day) {
 
 GameKind gameForDay(DateTime day) => weekGames(day)[day.weekday - 1];
 
-/// 合并两台设备的数据：进度 / 兑换 / 奖励都保留，积分自然一致。
+/// 合并两台设备的数据：进度 / 兑换保留；任务「移除」与奖励删除用墓碑，避免旧机顶回。
 AppData mergeAppData(AppData local, AppData remote) {
   final newer = remote.updatedAt.compareTo(local.updatedAt) >= 0 ? remote : local;
   final older = identical(newer, remote) ? local : remote;
 
+  final deletedTaskIds = <String>{...local.deletedTaskIds, ...remote.deletedTaskIds};
+  final deletedRewardIds = <String>{...local.deletedRewardIds, ...remote.deletedRewardIds};
+
+  // 移除名单：以较新一端为准（支持恢复）；旧端多出来的移除，仅在新端未明确恢复时保留。
+  final removedTaskIds = <String>{...newer.removedTaskIds};
+  for (final t in newer.tasks) {
+    if (t.removed) removedTaskIds.add(t.id);
+  }
+  TaskTemplate? _taskOf(AppData data, String id) {
+    for (final t in data.tasks) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
+
+  bool _restoredOnNewer(String id) {
+    if (newer.removedTaskIds.contains(id)) return false;
+    final t = _taskOf(newer, id);
+    return t != null && !t.removed;
+  }
+
+  for (final id in older.removedTaskIds) {
+    if (!_restoredOnNewer(id)) removedTaskIds.add(id);
+  }
+  for (final t in older.tasks) {
+    if (t.removed && !_restoredOnNewer(t.id)) removedTaskIds.add(t.id);
+  }
+
   final tasks = <String, TaskTemplate>{};
   for (final t in [...older.tasks, ...newer.tasks]) {
-    tasks[t.id] = t;
+    if (deletedTaskIds.contains(t.id)) continue;
+    final copy = TaskTemplate(
+      id: t.id,
+      subject: t.subject,
+      title: t.title,
+      minutes: t.minutes,
+      points: t.points,
+      schoolOnly: t.schoolOnly,
+      englishSpecial: t.englishSpecial,
+      note: t.note,
+      bonus: t.bonus,
+      bonusDate: t.bonusDate,
+      removed: removedTaskIds.contains(t.id),
+    );
+    tasks[copy.id] = copy;
   }
 
   final progress = <String, TaskProgress>{};
@@ -154,6 +199,7 @@ AppData mergeAppData(AppData local, AppData remote) {
 
   final rewards = <String, Reward>{};
   for (final r in [...older.rewards, ...newer.rewards]) {
+    if (deletedRewardIds.contains(r.id)) continue;
     rewards[r.id] = r;
   }
 
@@ -185,6 +231,9 @@ AppData mergeAppData(AppData local, AppData remote) {
     redemptions: redemptionList,
     playsUsed: plays,
     playSecondsLeft: playLeft,
+    removedTaskIds: removedTaskIds,
+    deletedTaskIds: deletedTaskIds,
+    deletedRewardIds: deletedRewardIds,
     vocab: mergeVocabState(local.vocab, remote.vocab),
     poems: mergePoemState(local.poems, remote.poems),
   );

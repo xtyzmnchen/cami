@@ -18,7 +18,10 @@ if [[ -f "$CPOLAR_PID_FILE" ]]; then
   kill "$(cat "$CPOLAR_PID_FILE" 2>/dev/null || true)" 2>/dev/null || true
   rm -f "$CPOLAR_PID_FILE"
 fi
+# 只杀 http 子进程不够，残留 master 会抢端口/导致拿不到新地址
 pkill -f "${CPOLAR} http" 2>/dev/null || true
+pkill -f '[c]polar' 2>/dev/null || true
+killall cpolar 2>/dev/null || true
 
 if [[ -f "$SERVER_PID_FILE" ]]; then
   kill "$(cat "$SERVER_PID_FILE" 2>/dev/null || true)" 2>/dev/null || true

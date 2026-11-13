@@ -83,16 +83,6 @@ class _SliceFruitGameState extends State<SliceFruitGame> {
   double get _fruitRadius => max(22, 34.0 - _progress.level * 1.2);
   int get _bombPenalty => 3 + _progress.level;
 
-  Future<void> _bombVibrate() async {
-    await HapticFeedback.vibrate();
-    await Future<void>.delayed(const Duration(milliseconds: 70));
-    await HapticFeedback.heavyImpact();
-    await Future<void>.delayed(const Duration(milliseconds: 70));
-    await HapticFeedback.vibrate();
-    await Future<void>.delayed(const Duration(milliseconds: 90));
-    await HapticFeedback.heavyImpact();
-  }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -223,7 +213,7 @@ class _SliceFruitGameState extends State<SliceFruitGame> {
       }
 
       if (f.bomb) {
-        unawaited(_bombVibrate());
+        unawaited(bombHitFeedback());
         _progress.loseLife(haptic: false);
         _progress.breakCombo();
         final penalty = _bombPenalty;

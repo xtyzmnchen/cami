@@ -12,7 +12,7 @@ class AppL10n {
   bool get isEn => locale.languageCode.toLowerCase() == 'en';
 
   static AppL10n of(BuildContext context) {
-    return Localizations.of<AppL10n>(context, AppL10n) ?? AppL10n(const Locale('zh'));
+    return Localizations.of<AppL10n>(context, AppL10n) ?? AppL10n(const Locale('en'));
   }
 
   static AppL10n fromCode(String code) =>
@@ -47,8 +47,9 @@ class AppL10n {
   String get language => isEn ? 'Language' : '语言';
   String get languageZh => isEn ? '中文' : '中文';
   String get languageEn => isEn ? 'English' : 'English';
-  String get languageHint =>
-      isEn ? 'Switch app language for everyone on this phone.' : '切换本机 App 显示语言（中 / 英）。';
+  String get languageHint => isEn
+      ? 'Switch app language on this phone. Android also updates the home-screen name.'
+      : '切换本机 App 显示语言（中 / 英）。安卓桌面图标名会一起改；iOS 图标名跟系统语言。';
 
   // —— 首页 ——
   String hello(DateTime now) {
@@ -635,6 +636,15 @@ class AppL10n {
       isEn ? 'English check-in — pick type & record' : '这是英语打卡，要选类型并录音';
   String get unnamed => isEn ? 'Untitled' : '未命名';
   String get deleteThis => isEn ? 'Delete this' : '删除这件';
+  String get removeTask => isEn ? 'Remove for student' : '对学生移除';
+  String get removeTaskHint => isEn
+      ? 'Hidden from student view. You can still edit or restore it here.'
+      : '学生端不再显示；家长仍可修改或恢复。';
+  String get restoreTask => isEn ? 'Restore for student' : '恢复给学生';
+  String get removedTasks => isEn ? 'Removed' : '已移除';
+  String get removedTasksHint => isEn
+      ? 'Students cannot see these. Tap to edit or restore.'
+      : '学生看不见这些。点进去可修改或恢复。';
   String balanceSpent(int balance, int spent) =>
       isEn ? 'Available $balance pts · Redeemed $spent pts' : '可用 $balance 分 · 已兑换 $spent 分';
   String get redeem => isEn ? 'Redeem' : '兑换';
