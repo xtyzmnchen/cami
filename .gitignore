@@ -51,3 +51,7 @@ cami-data/
 
 # build artifacts
 dist/
+
+# local secrets (蒲公英 API Key 等)
+tool/secrets.local.env
+*.local.env
