@@ -164,11 +164,14 @@ html[lang="zh"] [data-lang-block="zh"],
 html[lang="en"] [data-lang-block="en"] { display: block; }
 /* 导航里的中英标签用 inline，避免把 chip 撑成块级换行 */
 a.chip > [data-lang-block],
-.chip > [data-lang-block] { display: none; }
+.chip > [data-lang-block],
+.brand > [data-lang-block] { display: none; }
 html[lang="zh"] a.chip > [data-lang-block="zh"],
 html[lang="en"] a.chip > [data-lang-block="en"],
 html[lang="zh"] .chip > [data-lang-block="zh"],
-html[lang="en"] .chip > [data-lang-block="en"] { display: inline; }
+html[lang="en"] .chip > [data-lang-block="en"],
+html[lang="zh"] .brand > [data-lang-block="zh"],
+html[lang="en"] .brand > [data-lang-block="en"] { display: inline; }
 
 @media (max-width: 560px) {
   .wrap { width: calc(100% - 24px); padding-top: 18px; }

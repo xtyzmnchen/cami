@@ -1,2 +1,7 @@
 CFBundleDisplayName = "Little Crown";
 CFBundleName = "Little Crown";
+NSCameraUsageDescription = "Take a photo of your homework and scan the QR code on your computer to synchronize it";
+NSMicrophoneUsageDescription = "Recording, speaking for check-in, and timely reminders";
+NSPhotoLibraryAddUsageDescription = "Save the check-in photo";
+NSPhotoLibraryUsageDescription = "Select the homework photos from the album";
+NSSpeechRecognitionUsageDescription = "Turn what the children say into words";

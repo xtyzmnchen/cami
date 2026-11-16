@@ -1,2 +1,7 @@
 CFBundleDisplayName = "小皇冠";
 CFBundleName = "小皇冠";
+NSCameraUsageDescription = "拍下作业，并扫描同步电脑二维码";
+NSMicrophoneUsageDescription = "录音、说话打卡，还有到点提醒";
+NSPhotoLibraryAddUsageDescription = "保存打卡照片";
+NSPhotoLibraryUsageDescription = "从相册选择作业照片";
+NSSpeechRecognitionUsageDescription = "把小朋友说的话变成文字";

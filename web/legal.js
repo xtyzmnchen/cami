@@ -17,6 +17,14 @@
     document.querySelectorAll("[data-lang-btn]").forEach(function (btn) {
       btn.classList.toggle("active", btn.getAttribute("data-lang-btn") === lang);
     });
+    var title = document.documentElement.getAttribute(
+      lang === "en" ? "data-title-en" : "data-title-zh"
+    );
+    if (title) document.title = title;
+    var imgs = document.querySelectorAll(".brand img[data-alt-zh]");
+    imgs.forEach(function (img) {
+      img.alt = lang === "en" ? (img.getAttribute("data-alt-en") || "Little Crown") : (img.getAttribute("data-alt-zh") || "小皇冠");
+    });
     try {
       localStorage.setItem(KEY, lang);
     } catch (_) {}
