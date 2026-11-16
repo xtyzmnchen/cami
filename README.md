@@ -6,6 +6,9 @@
 
 **https://xtyzmnchen.github.io/cami/**
 
+- 隐私政策：https://xtyzmnchen.github.io/cami/privacy.html
+- 技术支持：https://xtyzmnchen.github.io/cami/support.html
+
 ## 电脑端：一键启动（推荐）
 
 需要本机已有：

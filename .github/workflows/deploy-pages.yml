@@ -25,6 +25,14 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build web --base-href /cami/ --release
+      # 确保法务页与同步发现文件随 Pages 发布（Flutter 会拷贝 web/，此处再校验一次）
+      - name: Ensure legal pages
+        run: |
+          test -f build/web/privacy.html
+          test -f build/web/support.html
+          test -f build/web/legal.css
+          test -f build/web/sync-endpoint.json
+          cp -f web/privacy.html web/support.html web/legal.css web/legal.js web/sync-endpoint.json build/web/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web

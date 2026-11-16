@@ -1,0 +1,177 @@
+:root {
+  --paper: #fff0f5;
+  --ink: #5a3040;
+  --muted: #b07888;
+  --rose: #ff8fb5;
+  --rose-deep: #ff6b9a;
+  --blush: #ffe4ef;
+  --line: #ffcada;
+  --card: rgba(255, 255, 255, 0.92);
+  --shadow: 0 12px 40px rgba(255, 107, 154, 0.18);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #ffd6e7 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #ffe8c8 0%, transparent 50%),
+    linear-gradient(180deg, #fff7fb 0%, var(--paper) 40%, #fff 100%);
+  line-height: 1.7;
+}
+
+a { color: var(--rose-deep); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.wrap {
+  width: min(860px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 64px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 800;
+  font-size: 1.15rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+.brand img {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.brand span { letter-spacing: 0.02em; }
+
+.nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s, transform .15s;
+}
+.chip:hover { background: var(--blush); text-decoration: none; transform: translateY(-1px); }
+.chip.active {
+  background: var(--rose-deep);
+  border-color: var(--rose-deep);
+  color: #fff;
+}
+
+.hero {
+  background: var(--card);
+  border: 1px solid rgba(255, 202, 218, 0.7);
+  border-radius: 24px;
+  padding: 28px 26px;
+  box-shadow: var(--shadow);
+  margin-bottom: 18px;
+}
+.hero h1 {
+  margin: 0 0 8px;
+  font-size: clamp(1.6rem, 4vw, 2.1rem);
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+.hero .meta {
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.hero p {
+  margin: 12px 0 0;
+  color: var(--ink);
+  max-width: 62ch;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid rgba(255, 202, 218, 0.7);
+  border-radius: 22px;
+  padding: 22px 24px;
+  box-shadow: 0 8px 28px rgba(90, 48, 64, 0.06);
+  margin-bottom: 14px;
+}
+.card h2 {
+  margin: 0 0 10px;
+  font-size: 1.15rem;
+  font-weight: 850;
+}
+.card p, .card li { color: #6a3b4c; }
+.card ul { padding-left: 1.2em; margin: 8px 0; }
+.card li { margin: 6px 0; }
+
+.contact {
+  display: grid;
+  gap: 10px;
+}
+.contact .row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--blush);
+  border: 1px solid var(--line);
+}
+.contact .label {
+  font-weight: 800;
+  min-width: 5.5em;
+  color: var(--rose-deep);
+}
+.contact .value { font-weight: 650; word-break: break-all; }
+
+.footer {
+  margin-top: 28px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+[data-lang-block] { display: none; }
+html[lang="zh"] [data-lang-block="zh"],
+html[lang="en"] [data-lang-block="en"] { display: block; }
+/* 导航里的中英标签用 inline，避免把 chip 撑成块级换行 */
+a.chip > [data-lang-block],
+.chip > [data-lang-block] { display: none; }
+html[lang="zh"] a.chip > [data-lang-block="zh"],
+html[lang="en"] a.chip > [data-lang-block="en"],
+html[lang="zh"] .chip > [data-lang-block="zh"],
+html[lang="en"] .chip > [data-lang-block="en"] { display: inline; }
+
+@media (max-width: 560px) {
+  .wrap { width: calc(100% - 24px); padding-top: 18px; }
+  .hero, .card { padding: 18px 16px; border-radius: 18px; }
+  .contact .label { min-width: auto; }
+}
