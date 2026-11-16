@@ -30,6 +30,25 @@ print("wrote $FILE")
 PY
 
 cd "$ROOT"
+
+# 本机若开了系统代理（常见 Clash 7897），git/curl 需要显式带上，否则直连 GitHub 会超时
+ensure_proxy() {
+  if [[ -n "${https_proxy:-}${HTTPS_PROXY:-}${ALL_PROXY:-}" ]]; then
+    return 0
+  fi
+  for port in 7897 7890 1087 1080; do
+    if nc -z -w 1 127.0.0.1 "$port" 2>/dev/null; then
+      export http_proxy="http://127.0.0.1:${port}"
+      export https_proxy="http://127.0.0.1:${port}"
+      export ALL_PROXY="socks5://127.0.0.1:${port}"
+      echo "使用本机代理 127.0.0.1:${port} 访问 GitHub"
+      return 0
+    fi
+  done
+  return 0
+}
+ensure_proxy
+
 git add web/sync-endpoint.json
 if git diff --cached --quiet; then
   echo "地址未变化，跳过推送"
@@ -37,7 +56,7 @@ if git diff --cached --quiet; then
 fi
 
 git commit -m "Update sync endpoint to ${URL}"
-git push origin HEAD
+git -c http.version=HTTP/1.1 push origin HEAD
 SHA="$(git rev-parse HEAD)"
 
 purge_jsdelivr() {
